@@ -1,0 +1,15 @@
+# big derived/raw data — do NOT commit (24 GB+)
+data/raw/
+data/processed/
+data/embed_cache/
+
+# system / env
+.DS_Store
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+.env
+
+# one-off backup before scripted edits
+HW2 - Template.bak.docx
