@@ -11,5 +11,8 @@ __pycache__/
 .venv/
 .env
 
-# one-off backup before scripted edits
+# one-off backups before scripted edits
 HW2 - Template.bak.docx
+HW2 - Template.*.bak.docx
+~$*.docx
+Archive.zip
