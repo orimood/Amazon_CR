@@ -1,0 +1,12 @@
+# Cross-Domain Recommendation — modeling phase (CRISP-DM §4).
+# Layered on top of requirements.txt (data + EDA + embeddings).
+# Embeddings are precomputed in §3, so sentence-transformers is NOT needed at
+# modeling time — only torch + the scientific stack already pinned.
+
+torch==2.5.1            # MF / EMCDR; Apple MPS or CUDA or CPU
+# already pinned in requirements.txt and reused here:
+#   numpy, pandas, pyarrow  (data IO)
+#   scikit-learn            (optional metrics / splits helpers)
+#   pyyaml                  (config files; transitive via jupyter)
+# Experiment tracking is local JSON/CSV (no wandb) to stay offline and avoid
+# publishing user-level outputs (HW1 ethical constraint).

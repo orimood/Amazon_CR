@@ -1,0 +1,40 @@
+# Smoke config — prove the full pipeline trains end-to-end on a tiny subsample.
+# Pair: Toys_and_Games -> Video_Games (smallest viable pair, overlap ~14.5k).
+# Runs on CPU (instant at this size; sidesteps any MPS op gaps for validation).
+name: smoke
+tag: smoke
+device: cpu
+seed: 42
+d: 32
+use_pop: true
+
+# Per-vertical recommender (BPR)
+rec_epochs: 2
+rec_lr: 0.01
+rec_weight_decay: 1.0e-6
+rec_batch_size: 1024
+rec_steps_per_epoch: 200        # cap steps so smoke is fast
+subsample_users: 4000           # cap overlap users used (null = all, for full runs)
+
+# EMCDR mapping (MLP)
+map_hidden: [64]
+map_epochs: 30
+map_lr: 0.001
+map_weight_decay: 1.0e-5
+map_batch_size: 512
+map_dropout: 0.1
+map_cos_weight: 0.5
+map_train_frac: 0.8
+
+# Evaluation (leave-one-out, sampled)
+eval_ks: [10, 20]
+eval_n_neg: 100
+eval_seeds: [0, 1]
+max_eval_users: null
+
+# Models to evaluate (deliverable + baselines)
+ablation: full                  # full | cats_only | text_only | id_only
+run_baselines: true             # random, mostpop, target_mf, feature_transfer
+
+pairs:
+  - [Toys_and_Games, Video_Games]

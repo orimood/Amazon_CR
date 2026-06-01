@@ -1,0 +1,46 @@
+# Full config — the deferred, real training run over all 8 viable pairs.
+# Per-vertical recommenders are trained ONCE each and reused across pairs.
+# Not run in the build+smoke pass; kept here so the full grid is one command:
+#   PYTHONPATH=src python -m cdr.run_grid --config configs/full.yaml
+name: full
+tag: full
+device: auto                    # mps if available, else cpu
+seed: 42
+d: 64
+use_pop: true
+
+rec_epochs: 15
+rec_lr: 0.01
+rec_weight_decay: 1.0e-6
+rec_batch_size: 4096
+rec_steps_per_epoch: null       # full pass over train positives each epoch
+subsample_users: null           # all users (reusable per-vertical embeddings)
+
+map_hidden: [128, 128]
+map_epochs: 200
+map_lr: 0.001
+map_weight_decay: 1.0e-5
+map_batch_size: 1024
+map_dropout: 0.2
+map_cos_weight: 0.5
+map_train_frac: 0.8
+
+eval_ks: [10, 20]
+eval_n_neg: 100
+eval_seeds: [0, 1, 2]
+max_eval_users: null
+
+ablation: full
+run_baselines: true
+
+# All 8 viable pairs (larger -> smaller as source -> target), ranked by overlap.
+# Ablations (full / cats_only / text_only) are swept by run_grid per pair.
+pairs:
+  - [Books, Movies_and_TV]
+  - [Books, Toys_and_Games]
+  - [Movies_and_TV, Toys_and_Games]
+  - [Movies_and_TV, CDs_and_Vinyl]
+  - [Books, CDs_and_Vinyl]
+  - [Movies_and_TV, Video_Games]
+  - [Toys_and_Games, Video_Games]
+  - [Books, Video_Games]

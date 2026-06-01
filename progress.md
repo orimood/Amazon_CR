@@ -145,3 +145,16 @@ The proper long-term fix is to move the project off the Desktop path. Until then
 ## HW2 status — §3 sections to fill
 
 `HW2 - Template.docx` §3.1–§3.5 can be written directly from `data/processed/DATASET_DESCRIPTION.md`: each table there maps to one section of the template.
+
+## §4 Modeling — pipeline built + smoke-validated (2026-06-01)
+
+Branch `emcdr-modeling`. Code in `src/cdr/` (run via `PYTHONPATH=src python -m cdr.run_pair --config configs/smoke.yaml`). Full architecture + how-to-run in `MODEL_CARD.md`; deciding rationale in the approved plan.
+
+**Deliverable scope is all 8 pairs**, not one — the HW1 "proof-of-value pair" wording is superseded by the §3 rewrite. The pipeline mirrors the Stage A/B reuse layout: 5 per-vertical hybrid recommenders trained once each + 8 per-pair mapping MLPs reusing them, aligned across verticals by `user_id` through the id-maps.
+
+- **Model.** Hybrid two-tower per vertical: learned user table + item tower `id_factor + W_text·text_emb + cat_bag(categories) [+ pop]`, BPR loss. EMCDR mapping `f: U_src→U_tgt` (MLP) trained on overlap users; cold-start inference `û_t=f(U_src)·V_tgt`. Ablations toggle the content branches (`full`/`cats_only`/`text_only`/`id_only`).
+- **Eval.** Leave-one-out, 1 held-out target test positive + 100 sampled unseen negatives; Recall@10/20, NDCG@10/20, HR@10, mean±std over seeds. Baselines: random, mostpop (deployed fallback), target-MF + mean-user-vector, feature-transfer (Model B, content cosine in shared MiniLM space).
+- **MPS gotcha.** `nn.EmbeddingBag` is unimplemented on Apple MPS — the category bag uses a learned table + `index_add_` instead, so it runs on CPU and MPS alike.
+- **Smoke result (Toys→Video_Games, d=32, 2 epochs, CPU; NOT headline numbers).** Pipeline trains end-to-end, deterministic on re-run, all 5 models produce finite metrics. Content-bearing EMCDR beats the chance baselines; `id_only` falls below chance (content is what enables transfer); `feature_transfer` is strong and ablation-invariant. Results in `results/*.json` (tracked; `models/` weights gitignored).
+
+**Deferred:** full training on `configs/full.yaml` (all 8 pairs × 3 ablations, MPS; Books heaviest), the full lift-over-baseline grid, random-split robustness, and the N=50 qualitative check.
