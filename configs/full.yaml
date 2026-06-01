@@ -4,7 +4,10 @@
 #   PYTHONPATH=src python -m cdr.run_grid --config configs/full.yaml
 name: full
 tag: full
-device: auto                    # mps if available, else cpu
+device: cpu                     # CPU is correct AND faster here: Apple MPS yields NaN
+                                # BPR loss for this model and is slower for an
+                                # embedding-lookup/neg-sampling-bound workload. On a CUDA
+                                # box, set this to "auto" (auto picks cuda before cpu).
 seed: 42
 d: 64
 use_pop: true
