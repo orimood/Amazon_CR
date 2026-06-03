@@ -158,3 +158,16 @@ Branch `emcdr-modeling`. Code in `src/cdr/` (run via `PYTHONPATH=src python -m c
 - **Smoke result (Toys→Video_Games, d=32, 2 epochs, CPU; NOT headline numbers).** Pipeline trains end-to-end, deterministic on re-run, all 5 models produce finite metrics. Content-bearing EMCDR beats the chance baselines; `id_only` falls below chance (content is what enables transfer); `feature_transfer` is strong and ablation-invariant. Results in `results/*.json` (tracked; `models/` weights gitignored).
 
 **Deferred:** full training on `configs/full.yaml` (all 8 pairs × 3 ablations, MPS; Books heaviest), the full lift-over-baseline grid, random-split robustness, and the N=50 qualitative check.
+
+## §4 Modeling — mapping redesign: history-grounded bridge (2026-06-02)
+
+Full-run diagnosis: the EMCDR mapping is strong at high overlap (won 4/8 pairs) but **loses to a no-learning content baseline at thin overlap** (the ~11–16k-overlap Video Games targets). Root cause worked out with the user: the mapping is *data-starved and trained poorly*, not too weak. Decision: **do not** bolt on the content crutch (Model B fusion); instead make the *learned* mapping itself better. Approved plan: `~/.claude/plans/sprightly-tinkering-dusk.md`.
+
+New module `src/cdr/bridge.py` (config knobs in `config.py`; `configs/bridge_{smoke,full}.yaml`):
+- **History-grounded source encoder** — source-user rep = learned pool (mean | attention) over the embeddings of the user's source items, so it's a function of history (enables augmentation, robust for thin/cold users, no fragile free `U_src`).
+- **End-to-end BPR-on-target** — the bridge is trained to rank the user's *real* target interactions, NOT by regressing onto the noisy learned `U_tgt`.
+- **Sub-history augmentation** — each overlap user → many examples per epoch (resampled source subsets).
+- **Semi-supervised CORAL alignment** — source-only/target-only users pull the bridge output distribution toward the real target-user distribution.
+- **Validation early-stopping + best-on-val model selection**, per-user temporal hold-out (also fixes the global-split untrained-user issue). Reuses the recommenders only for frozen item embeddings + the existing eval helpers.
+
+**Status: written, NOT yet execution-tested.** PyTorch (and most of `.venv`) was iCloud-evicted mid-session (`libtorch_cpu.dylib` showed 0 on-disk blocks), so any python importing torch/yaml hangs on re-download. Verified what's possible without it: `py_compile` clean (no syntax errors), config keys cross-checked against the dataclass, full static logic review. **To validate once `.venv` is restored:** `PYTHONPATH=src python -m cdr.bridge --config configs/bridge_smoke.yaml` (tiny, CPU), then `configs/bridge_full.yaml` for the Phase-5 confirmation (thin Books→Video_Games must reach ≥ the content baseline; rich Books→Movies must not regress).

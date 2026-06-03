@@ -1,0 +1,50 @@
+# Phase-5 confirmation runs for the history-grounded bridge.
+# One THIN pair (Books -> Video_Games, ~12k overlap — where the old EMCDR lost to content)
+# and one RICH pair (Books -> Movies_and_TV, ~109k — where it already won).
+# Design goal: bridge >= content baseline on the thin pair, no regression on the rich pair.
+# CPU (Apple MPS yields NaN for the recommenders). Heavy: Books recommender is ~7.5M positives.
+#   PYTHONPATH=src python -m cdr.bridge --config configs/bridge_full.yaml
+name: bridge_full
+tag: bridge_full
+device: cpu
+seed: 42
+d: 64
+use_pop: true
+
+# per-vertical recommenders -> frozen item embeddings (trained on all users; reused per pair)
+rec_epochs: 15
+rec_lr: 0.01
+rec_weight_decay: 1.0e-6
+rec_batch_size: 4096
+rec_steps_per_epoch: null
+subsample_users: null
+
+# history-grounded bridge
+pool: mean                   # try "attention" as an ablation
+aug_k: 4
+aug_min_frac: 0.4
+bridge_hidden: [128, 128]
+bridge_bottleneck: null      # try e.g. 32 to decouple mapping dim from d
+bridge_lr: 0.001
+bridge_weight_decay: 1.0e-5
+bridge_dropout: 0.2
+bridge_epochs: 80
+bridge_batch: 1024
+bridge_neg: 1
+early_stop_patience: 8
+semisup_weight: 0.1          # CORAL alignment on the non-overlap majority
+semisup_batch: 512
+semisup_pool_cap: 20000
+map_train_frac: 0.8
+
+# evaluation
+eval_ks: [10, 20]
+eval_n_neg: 100
+eval_seeds: [0, 1, 2]
+max_eval_users: null
+ablation: full
+run_baselines: true
+
+pairs:
+  - [Books, Video_Games]       # thin — the pair to rescue
+  - [Books, Movies_and_TV]     # rich — must not regress

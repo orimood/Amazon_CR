@@ -38,6 +38,23 @@ class Config:
     map_cos_weight: float = 0.5                  # loss = mse + cos_weight * (1 - cos)
     map_train_frac: float = 0.8                  # overlap split: mapping-train vs cold-eval
 
+    # history-grounded bridge (the redesign — see bridge.py)
+    pool: str = "mean"                           # mean | attention (source-history pooling)
+    aug_k: int = 4                               # sub-history augmentation samples per user per epoch (0 = off)
+    aug_min_frac: float = 0.4                    # sub-history keeps a random frac in [aug_min_frac, 1.0]
+    bridge_hidden: list = field(default_factory=lambda: [128, 128])
+    bridge_bottleneck: Optional[int] = None      # low-dim bottleneck before the MLP (decouples mapping dim from d)
+    bridge_lr: float = 1e-3
+    bridge_weight_decay: float = 1e-5
+    bridge_dropout: float = 0.2
+    bridge_epochs: int = 40
+    bridge_batch: int = 1024
+    bridge_neg: int = 1                          # target negatives per positive (BPR)
+    early_stop_patience: int = 5                 # epochs without val improvement (0 = fixed epochs)
+    semisup_weight: float = 0.0                  # CORAL alignment weight on non-overlap users (0 = off)
+    semisup_batch: int = 512                     # users per alignment step (source-only / target-only)
+    semisup_pool_cap: int = 20000                # cap on non-overlap users whose histories are cached
+
     # evaluation (leave-one-out, sampled)
     eval_ks: list = field(default_factory=lambda: [10, 20])
     eval_n_neg: int = 100
@@ -77,3 +94,10 @@ class Config:
 
     def result_path(self, src: str, tgt: str, ablation: str) -> Path:
         return Path(self.results_root) / f"{src}__{tgt}__{ablation}__{self.tag}.json"
+
+    # convenience: per-pair bridge checkpoint dir + result path (the redesign)
+    def bridge_dir(self, src: str, tgt: str, ablation: str) -> Path:
+        return Path(self.models_root) / "bridges" / f"{src}__{tgt}__{ablation}__{self.tag}"
+
+    def bridge_result_path(self, src: str, tgt: str, ablation: str) -> Path:
+        return Path(self.results_root) / f"bridge__{src}__{tgt}__{ablation}__{self.tag}.json"
