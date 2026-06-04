@@ -38,6 +38,9 @@ eval_ks: [10, 20]
 eval_n_neg: 100
 eval_seeds: [0, 1]
 max_eval_users: null
+holdout: temporal
+neg_sampling: popularity      # exercise the popularity-weighted negative sampler
+compare_original: true        # exercise the original-mapping head-to-head path
 ablation: full
 run_baselines: true
 

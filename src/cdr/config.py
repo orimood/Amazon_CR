@@ -60,6 +60,13 @@ class Config:
     eval_n_neg: int = 100
     eval_seeds: list = field(default_factory=lambda: [0, 1, 2])
     max_eval_users: Optional[int] = None
+    holdout: str = "temporal"                    # held-out target positive: temporal (latest = predict
+                                                 # the future, realistic) | random (seeded)
+    neg_sampling: str = "uniform"                # negative sampling for eval candidates:
+                                                 # uniform | popularity (draw negs ~ popularity to
+                                                 # neutralize the MostPop baseline's free edge)
+    compare_original: bool = False               # also train+eval the ORIGINAL free-embedding EMCDR
+                                                 # mapping (f: U_src->U_tgt) for a head-to-head
 
     # what to run
     ablation: str = "full"                       # full | cats_only | text_only | id_only

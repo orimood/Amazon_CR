@@ -31,6 +31,7 @@ import torch.nn.functional as F
 from .config import Config
 from .data import PairData, VerticalData, align_overlap
 from .evaluate import _rank_metrics, _sample_candidates, _source_text_profiles
+from .models import MappingMLP
 from .train_recommender import train_recommender
 from .utils import log, save_json, select_device, set_seed
 
@@ -114,11 +115,25 @@ def history_map(vd: VerticalData, users) -> dict:
     return {u: g["item_idx"].to_numpy() for u, g in _positives(vd, users).groupby("user_idx")}
 
 
-def target_loo_test(vd: VerticalData, users) -> dict:
-    """user_idx -> latest target positive item_idx (per-user temporal hold-out for eval/val)."""
-    df = _positives(vd, users).sort_values(["user_idx", "timestamp"])
-    last = df.groupby("user_idx", as_index=False).tail(1)
-    return dict(zip(last["user_idx"].to_numpy(), last["item_idx"].to_numpy()))
+def target_held_out(vd: VerticalData, users, cfg) -> dict:
+    """user_idx -> one held-out target positive item_idx for the cold-start eval/val.
+
+    cfg.holdout:
+      'temporal' (default) -> the user's LATEST positive (predict-the-future; realistic, and the
+                  setting where personalization beats the popularity fallback).
+      'random'   -> a uniformly random positive (seeded). Note: empirically this *inflates* the
+                  popularity baseline (a random positive tends to be a popular core item), so it is
+                  an easier, less realistic protocol — kept only for ablation.
+    """
+    df = _positives(vd, users)
+    if len(df) == 0:
+        return {}
+    if cfg.holdout == "random":
+        df = df.assign(_r=np.random.default_rng(cfg.seed).random(len(df)))
+        picked = df.loc[df.groupby("user_idx")["_r"].idxmin()]
+    else:                                                   # temporal: latest positive per user
+        picked = df.sort_values(["user_idx", "timestamp"]).groupby("user_idx", as_index=False).tail(1)
+    return dict(zip(picked["user_idx"].to_numpy(), picked["item_idx"].to_numpy()))
 
 
 def role_user_idx(pair: PairData, vd: VerticalData, role: str) -> np.ndarray:
@@ -143,14 +158,61 @@ def _sample_neg(seen, n_items, rng):
             return c
 
 
+def _sample_cands(tgt_users, held_items, tgt_seen, n_items, n_neg, rng, pop_dist=None):
+    """Candidate sets [held, neg_0...neg_{n_neg-1}]. pop_dist=None -> uniform negatives (the
+    shared helper); otherwise draw negatives ~ popularity (debiases the MostPop baseline)."""
+    if pop_dist is None:
+        return _sample_candidates(tgt_users, held_items, tgt_seen, n_items, n_neg, rng)
+    cdf = np.cumsum(pop_dist)
+    cands = np.empty((len(tgt_users), 1 + n_neg), dtype=np.int64)
+    for k, u in enumerate(tgt_users):
+        seen = tgt_seen.get(u, frozenset())
+        negs = []
+        while len(negs) < n_neg:
+            draw = np.minimum(np.searchsorted(cdf, rng.random((n_neg - len(negs)) * 2 + 8)), n_items - 1)
+            for it in draw:
+                if it not in seen:
+                    negs.append(int(it))
+                    if len(negs) == n_neg:
+                        break
+        cands[k, 0] = held_items[k]
+        cands[k, 1:] = negs[:n_neg]
+    return cands
+
+
+def _train_old_mapping(src_model, tgt_model, fit_df, cfg, device):
+    """The ORIGINAL EMCDR mapping: MLP f regressing the source user factor onto the target user
+    factor (MSE + cos) on overlap-fit users. Cold-start: f(U_src) . V_tgt. For the head-to-head."""
+    si, ti = fit_df["src_idx"].to_numpy(), fit_df["tgt_idx"].to_numpy()
+    with torch.no_grad():
+        Us = src_model.user_emb(torch.as_tensor(si, dtype=torch.long, device=device)).detach()
+        Ut = tgt_model.user_emb(torch.as_tensor(ti, dtype=torch.long, device=device)).detach()
+    f = MappingMLP(cfg.d, cfg.map_hidden, cfg.map_dropout).to(device)
+    opt = torch.optim.Adam(f.parameters(), lr=cfg.map_lr, weight_decay=cfg.map_weight_decay)
+    rng = np.random.default_rng(cfg.seed)
+    n, bs = len(si), cfg.map_batch_size
+    f.train()
+    for _ in range(cfg.map_epochs):
+        p = rng.permutation(n)
+        for b in range(0, n, bs):
+            sel = p[b:b + bs]
+            pred = f(Us[sel])
+            loss = F.mse_loss(pred, Ut[sel]) + cfg.map_cos_weight * (1 - F.cosine_similarity(pred, Ut[sel], dim=-1)).mean()
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+    log(f"trained ORIGINAL mapping on {n} overlap-fit users ({cfg.map_epochs} epochs)")
+    return f
+
+
 # ------------------------------------------------------------------------- validation
-def _val_recall(cfg, enc, bridge, V_src, V_tgt, val_users, src_hist, val_latest,
+def _val_recall(cfg, enc, bridge, V_src, V_tgt, val_users, src_hist, held_map,
                 tgt_seen, n_items, device, k=10):
     enc.eval()
     bridge.eval()
     rng = np.random.default_rng(777)                                   # fixed: comparable across epochs
     tgt_users = np.array([t for _, t in val_users], dtype=np.int64)
-    held = np.array([val_latest[t] for _, t in val_users], dtype=np.int64)
+    held = np.array([held_map[t] for _, t in val_users], dtype=np.int64)
     with torch.no_grad():
         mapped = bridge(enc(V_src, [src_hist[s] for s, _ in val_users], device))
     cands = _sample_candidates(tgt_users, held, tgt_seen, n_items, cfg.eval_n_neg, rng)
@@ -201,9 +263,9 @@ def run_bridge_pair(cfg: Config, src: str, tgt: str) -> dict:
     n_items_tgt = tgt_vd.n_items
     fit_users = [(int(r.src_idx), int(r.tgt_idx)) for r in fit_df.itertuples()
                  if r.src_idx in src_hist and r.tgt_idx in tgt_pos]
-    val_latest = target_loo_test(tgt_vd, val_df["tgt_idx"].unique()) if n_val else {}
+    val_held = target_held_out(tgt_vd, val_df["tgt_idx"].unique(), cfg) if n_val else {}
     val_users = [(int(r.src_idx), int(r.tgt_idx)) for r in val_df.itertuples()
-                 if r.src_idx in src_hist and r.tgt_idx in val_latest]
+                 if r.src_idx in src_hist and r.tgt_idx in val_held]
     log(f"bridge fit={len(fit_users)} val={len(val_users)} cold_eval~{len(ev_df)}")
 
     # semi-supervised pools (non-overlap users), capped + cached
@@ -257,7 +319,7 @@ def run_bridge_pair(cfg: Config, src: str, tgt: str) -> dict:
         msg = f"  [bridge {src}->{tgt}/{ablation}] epoch {epoch + 1}/{cfg.bridge_epochs} loss={total / max(nb, 1):.4f}"
         if val_users:
             vr = _val_recall(cfg, enc, bridge, V_src, V_tgt, val_users, src_hist,
-                             val_latest, tgt_seen, n_items_tgt, device)
+                             val_held, tgt_seen, n_items_tgt, device)
             msg += f" val_recall@10={vr:.4f}"
             if vr > best_val:
                 best_val, bad = vr, 0
@@ -274,7 +336,9 @@ def run_bridge_pair(cfg: Config, src: str, tgt: str) -> dict:
         enc.load_state_dict(best_state[0])
         bridge.load_state_dict(best_state[1])
 
-    res = _evaluate(cfg, enc, bridge, V_src, V_tgt, src_vd, tgt_vd, ev_df, src_hist, tgt_seen)
+    f_old = _train_old_mapping(src_model, tgt_model, fit_df, cfg, device) if cfg.compare_original else None
+    res = _evaluate(cfg, enc, bridge, V_src, V_tgt, src_vd, tgt_vd, ev_df, src_hist, tgt_seen,
+                    src_model=src_model, f_old=f_old)
     out = {"src": src, "tgt": tgt, "ablation": ablation, "arch": "history_bridge",
            "overlap_aligned": int(len(align)),
            "best_val_recall@10": (best_val if best_state is not None else None),
@@ -284,12 +348,13 @@ def run_bridge_pair(cfg: Config, src: str, tgt: str) -> dict:
     return out
 
 
-def _evaluate(cfg, enc, bridge, V_src, V_tgt, src_vd, tgt_vd, ev_df, src_hist, tgt_seen) -> dict:
+def _evaluate(cfg, enc, bridge, V_src, V_tgt, src_vd, tgt_vd, ev_df, src_hist, tgt_seen,
+              src_model=None, f_old=None) -> dict:
     device = V_tgt.device
     n_items = tgt_vd.n_items
-    test_item = target_loo_test(tgt_vd, ev_df["tgt_idx"].unique())
+    test_held = target_held_out(tgt_vd, ev_df["tgt_idx"].unique(), cfg)
     ev = [(int(r.src_idx), int(r.tgt_idx)) for r in ev_df.itertuples()
-          if r.src_idx in src_hist and r.tgt_idx in test_item]
+          if r.src_idx in src_hist and r.tgt_idx in test_held]
     if cfg.max_eval_users:
         ev = ev[:cfg.max_eval_users]
     if not ev:
@@ -297,33 +362,48 @@ def _evaluate(cfg, enc, bridge, V_src, V_tgt, src_vd, tgt_vd, ev_df, src_hist, t
 
     tgt_users = np.array([t for _, t in ev], dtype=np.int64)
     src_users = np.array([s for s, _ in ev], dtype=np.int64)
-    held = np.array([test_item[t] for t in tgt_users], dtype=np.int64)
+    held = np.array([test_held[t] for t in tgt_users], dtype=np.int64)
 
     enc.eval()
     bridge.eval()
     with torch.no_grad():
         mapped = bridge(enc(V_src, [src_hist[s] for s in src_users], device))
+        mapped_old = None
+        if f_old is not None and src_model is not None:
+            f_old.eval()
+            Us_eval = src_model.user_emb(torch.as_tensor(src_users, dtype=torch.long, device=device))
+            mapped_old = f_old(Us_eval).detach()
 
     pop = tgt_vd.item_popularity()
+    pop_dist = None
+    if cfg.neg_sampling == "popularity":
+        tot = float(pop.sum())
+        pop_dist = (pop / tot) if tot > 0 else None
+
     models = ["bridge"]
+    if mapped_old is not None:
+        models.append("emcdr_original")
     if cfg.run_baselines:
         models += ["baseline_mostpop", "baseline_random", "baseline_feature_transfer"]
         prof = F.normalize(torch.from_numpy(_source_text_profiles(src_vd, src_users)).to(device), dim=-1)
         tgt_text = F.normalize(torch.from_numpy(tgt_vd.store.text_emb).to(device), dim=-1)
 
     log(f"evaluate bridge [{src_vd.vertical}->{tgt_vd.vertical}] cohort={len(ev)} "
-        f"n_neg={cfg.eval_n_neg} seeds={cfg.eval_seeds}")
+        f"n_neg={cfg.eval_n_neg} neg_sampling={cfg.neg_sampling} "
+        f"compare_original={mapped_old is not None} seeds={cfg.eval_seeds}")
     per_seed = {m: [] for m in models}
     n_ev = len(ev)
     for seed in cfg.eval_seeds:
         rng = np.random.default_rng(1000 + seed)
-        cands = _sample_candidates(tgt_users, held, tgt_seen, n_items, cfg.eval_n_neg, rng)
+        cands = _sample_cands(tgt_users, held, tgt_seen, n_items, cfg.eval_n_neg, rng, pop_dist)
         scores = {m: np.empty((n_ev, cands.shape[1])) for m in models}
         for s in range(0, n_ev, 2048):
             e = min(s + 2048, n_ev)
             c = torch.as_tensor(cands[s:e], dtype=torch.long, device=device)
             cand_emb = V_tgt[c]
             scores["bridge"][s:e] = (mapped[s:e].unsqueeze(1) * cand_emb).sum(-1).cpu().numpy()
+            if mapped_old is not None:
+                scores["emcdr_original"][s:e] = (mapped_old[s:e].unsqueeze(1) * cand_emb).sum(-1).cpu().numpy()
             if cfg.run_baselines:
                 scores["baseline_mostpop"][s:e] = pop[cands[s:e]]
                 scores["baseline_random"][s:e] = rng.random((e - s, cands.shape[1]))

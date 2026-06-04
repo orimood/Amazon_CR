@@ -6,6 +6,9 @@ data/embed_cache/
 # modeling artifacts — trained weights are large/derived (results/*.json is kept)
 models/
 
+# local session / tool state
+.claude/
+
 # system / env
 .DS_Store
 __pycache__/

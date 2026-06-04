@@ -42,6 +42,9 @@ eval_ks: [10, 20]
 eval_n_neg: 100
 eval_seeds: [0, 1, 2]
 max_eval_users: null
+holdout: temporal            # latest positive held out (predict-the-future); 'random' = ablation
+neg_sampling: popularity     # draw eval negatives ~ popularity -> debias the MostPop baseline
+compare_original: true       # also train+eval the ORIGINAL free-embedding EMCDR mapping (head-to-head)
 ablation: full
 run_baselines: true
 
