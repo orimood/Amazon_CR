@@ -67,6 +67,11 @@ class Config:
                                                  # neutralize the MostPop baseline's free edge)
     compare_original: bool = False               # also train+eval the ORIGINAL free-embedding EMCDR
                                                  # mapping (f: U_src->U_tgt) for a head-to-head
+    neg_train: str = "uniform"                   # TRAINING negatives (recommender + bridge):
+                                                 # uniform | popularity (hard negatives — forces the
+                                                 # model to learn taste, not popularity)
+    neg_train_power: float = 1.0                 # popularity exponent for hard training negatives
+                                                 # (1.0 = match eval distribution; 0.75 = softer)
 
     # what to run
     ablation: str = "full"                       # full | cats_only | text_only | id_only

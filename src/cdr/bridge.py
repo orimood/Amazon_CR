@@ -158,6 +158,31 @@ def _sample_neg(seen, n_items, rng):
             return c
 
 
+def _sample_negs_batch(users, tgt_seen, n_items, rng, cdf=None, max_tries=4):
+    """One target negative per user, excluding their seen items. cdf=None -> uniform; otherwise
+    draw ~ popularity (hard negatives). Vectorized draw for speed in the training loop."""
+    def draw(size):
+        if cdf is None:
+            return rng.integers(0, n_items, size=size)
+        return np.minimum(np.searchsorted(cdf, rng.random(size)), n_items - 1)
+
+    neg = draw(len(users))
+    for _ in range(max_tries):
+        bad = np.fromiter((neg[k] in tgt_seen.get(users[k], frozenset()) for k in range(len(users))),
+                          dtype=bool, count=len(users))
+        if not bad.any():
+            break
+        neg[bad] = draw(int(bad.sum()))
+    return neg
+
+
+def _pop_cdf(vd, power):
+    """Normalized popularity^power CDF over items (for hard-negative sampling). None if degenerate."""
+    w = vd.item_popularity() ** power
+    tot = float(w.sum())
+    return np.cumsum(w / tot) if tot > 0 else None
+
+
 def _sample_cands(tgt_users, held_items, tgt_seen, n_items, n_neg, rng, pop_dist=None):
     """Candidate sets [held, neg_0...neg_{n_neg-1}]. pop_dist=None -> uniform negatives (the
     shared helper); otherwise draw negatives ~ popularity (debiases the MostPop baseline)."""
@@ -261,6 +286,9 @@ def run_bridge_pair(cfg: Config, src: str, tgt: str) -> dict:
     tgt_pos = history_map(tgt_vd, fit_df["tgt_idx"].unique())
     tgt_seen = tgt_vd.user_seen_sets(restrict_users=align["tgt_idx"].unique())
     n_items_tgt = tgt_vd.n_items
+    tgt_cdf = _pop_cdf(tgt_vd, cfg.neg_train_power) if cfg.neg_train == "popularity" else None
+    log(f"bridge training negatives: {cfg.neg_train}"
+        + (f" (power={cfg.neg_train_power})" if tgt_cdf is not None else ""))
     fit_users = [(int(r.src_idx), int(r.tgt_idx)) for r in fit_df.itertuples()
                  if r.src_idx in src_hist and r.tgt_idx in tgt_pos]
     val_held = target_held_out(tgt_vd, val_df["tgt_idx"].unique(), cfg) if n_val else {}
@@ -299,8 +327,7 @@ def run_bridge_pair(cfg: Config, src: str, tgt: str) -> dict:
             hist = [_subsample_hist(src_hist[s], rng, cfg) for s, _ in batch]
             mapped = bridge(enc(V_src, hist, device))
             pos = np.fromiter((rng.choice(tgt_pos[t]) for _, t in batch), np.int64, len(batch))
-            neg = np.fromiter((_sample_neg(tgt_seen.get(t, frozenset()), n_items_tgt, rng)
-                               for _, t in batch), np.int64, len(batch))
+            neg = _sample_negs_batch([t for _, t in batch], tgt_seen, n_items_tgt, rng, tgt_cdf)
             sp = (mapped * V_tgt[torch.as_tensor(pos, device=device)]).sum(-1)
             sn = (mapped * V_tgt[torch.as_tensor(neg, device=device)]).sum(-1)
             loss = -F.logsigmoid(sp - sn).mean()

@@ -1,0 +1,55 @@
+# Hard-negative training experiment (Future-plan #1).
+# Retrains the recommenders AND the bridge with popularity-weighted (hard) negatives, so the models
+# are forced to learn taste rather than popularity. Evaluated honestly (temporal holdout +
+# popularity-weighted negatives) with the original-mapping head-to-head. New tag -> recommenders
+# retrain (they are the root cause). Thin Books->Video_Games + rich Books->Movies.
+#   PYTHONPATH=src python -m cdr.bridge --config configs/bridge_hardneg.yaml
+name: bridge_hardneg
+tag: bridge_hardneg
+device: cpu
+seed: 42
+d: 64
+use_pop: true
+
+# per-vertical recommenders — HARD NEGATIVES
+rec_epochs: 15
+rec_lr: 0.01
+rec_weight_decay: 1.0e-6
+rec_batch_size: 4096
+rec_steps_per_epoch: null
+subsample_users: null
+neg_train: popularity        # <-- hard negatives in recommender training (the root-cause fix)
+neg_train_power: 1.0         # match the eval negative distribution; try 0.75 if training is unstable
+
+# history-grounded bridge — also HARD NEGATIVES (neg_train above applies to the bridge too)
+pool: mean
+aug_k: 4
+aug_min_frac: 0.4
+bridge_hidden: [128, 128]
+bridge_bottleneck: null
+bridge_lr: 0.001
+bridge_weight_decay: 1.0e-5
+bridge_dropout: 0.2
+bridge_epochs: 80
+bridge_batch: 1024
+bridge_neg: 1
+early_stop_patience: 8
+semisup_weight: 0.1
+semisup_batch: 512
+semisup_pool_cap: 20000
+map_train_frac: 0.8
+
+# evaluation — debiased (the honest protocol)
+eval_ks: [10, 20]
+eval_n_neg: 100
+eval_seeds: [0, 1, 2]
+max_eval_users: null
+holdout: temporal
+neg_sampling: popularity
+compare_original: true
+ablation: full
+run_baselines: true
+
+pairs:
+  - [Books, Video_Games]
+  - [Books, Movies_and_TV]

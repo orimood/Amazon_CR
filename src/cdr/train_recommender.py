@@ -18,8 +18,15 @@ from .utils import log, save_json
 _EMPTY = frozenset()
 
 
-def _sample_negatives(u, user_seen, n_items, rng, max_tries=3):
-    neg = rng.integers(0, n_items, size=len(u))
+def _sample_negatives(u, user_seen, n_items, rng, cdf=None, max_tries=3):
+    """Per-positive negatives, excluding each user's seen items. cdf=None -> uniform; otherwise
+    draw negatives ~ popularity (hard negatives) via inverse-CDF sampling."""
+    def draw(size):
+        if cdf is None:
+            return rng.integers(0, n_items, size=size)
+        return np.minimum(np.searchsorted(cdf, rng.random(size)), n_items - 1)
+
+    neg = draw(len(u))
     for _ in range(max_tries):
         bad = np.fromiter(
             (neg[k] in user_seen.get(u[k], _EMPTY) for k in range(len(u))),
@@ -27,7 +34,7 @@ def _sample_negatives(u, user_seen, n_items, rng, max_tries=3):
         )
         if not bad.any():
             break
-        neg[bad] = rng.integers(0, n_items, size=int(bad.sum()))
+        neg[bad] = draw(int(bad.sum()))
     return neg
 
 
@@ -53,11 +60,17 @@ def train_recommender(vd: VerticalData, cfg: Config, ablation: str,
         raise RuntimeError(f"no train positives for {vd.vertical} (restrict={restrict is not None})")
     user_seen = vd.user_seen_sets(restrict_users=restrict)
 
+    cdf = None
+    if cfg.neg_train == "popularity":
+        w = vd.item_popularity() ** cfg.neg_train_power
+        tot = float(w.sum())
+        cdf = np.cumsum(w / tot) if tot > 0 else None
+
     opt = torch.optim.Adam(model.parameters(), lr=cfg.rec_lr, weight_decay=cfg.rec_weight_decay)
     rng = np.random.default_rng(cfg.seed)
     N, bs = len(train_pos), cfg.rec_batch_size
     log(f"train recommender [{vd.vertical}/{ablation}] users~{len(user_seen)} pos={N} "
-        f"items={vd.n_items} d={cfg.d} device={device}")
+        f"items={vd.n_items} d={cfg.d} neg_train={cfg.neg_train} device={device}")
 
     model.train()
     for epoch in range(cfg.rec_epochs):
@@ -71,7 +84,7 @@ def train_recommender(vd: VerticalData, cfg: Config, ablation: str,
             if len(sel) == 0:
                 break
             u, ip = train_pos[sel, 0], train_pos[sel, 1]
-            ineg = _sample_negatives(u, user_seen, vd.n_items, rng)
+            ineg = _sample_negatives(u, user_seen, vd.n_items, rng, cdf)
             s_pos = model.score(u, ip, vd.store)
             s_neg = model.score(u, ineg, vd.store)
             loss = -F.logsigmoid(s_pos - s_neg).mean()
