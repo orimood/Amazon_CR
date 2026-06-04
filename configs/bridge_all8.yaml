@@ -1,0 +1,66 @@
+# Full 8-pair run of the history-grounded bridge, configured like the original smoke that showed
+# bridge > content: temporal hold-out + UNIFORM eval negatives + UNIFORM training negatives
+# (i.e. NOT the debiased protocol — this reproduces the "looks good" setup on the whole dataset).
+# Also trains the original EMCDR mapping in the same harness (head-to-head) on all 8 pairs.
+#
+# CAVEAT (see EXPERIMENTS.md §6): under uniform negatives the learned numbers are popularity-
+# inflated; the honest read needs neg_sampling=popularity. This run is for the full-grid picture
+# under the original protocol, comparable to the original EMCDR grid (RESULTS.md).
+#
+#   PYTHONPATH=src python -m cdr.bridge --config configs/bridge_all8.yaml
+name: bridge_all8
+tag: bridge_all8
+device: cpu
+seed: 42
+d: 64
+use_pop: true
+
+# per-vertical recommenders (5 verticals, trained once each, reused across pairs) — uniform negatives
+rec_epochs: 15
+rec_lr: 0.01
+rec_weight_decay: 1.0e-6
+rec_batch_size: 4096
+rec_steps_per_epoch: null
+subsample_users: null
+neg_train: uniform           # like the smoke (NOT hard negatives)
+neg_train_power: 1.0
+
+# history-grounded bridge (same architecture as the smoke)
+pool: mean
+aug_k: 4
+aug_min_frac: 0.4
+bridge_hidden: [128, 128]
+bridge_bottleneck: null
+bridge_lr: 0.001
+bridge_weight_decay: 1.0e-5
+bridge_dropout: 0.2
+bridge_epochs: 80
+bridge_batch: 1024
+bridge_neg: 1
+early_stop_patience: 8
+semisup_weight: 0.1
+semisup_batch: 512
+semisup_pool_cap: 20000
+map_train_frac: 0.8
+
+# evaluation — like the smoke: temporal hold-out, UNIFORM negatives
+eval_ks: [10, 20]
+eval_n_neg: 100
+eval_seeds: [0, 1, 2]
+max_eval_users: null
+holdout: temporal
+neg_sampling: uniform
+compare_original: true       # original EMCDR mapping head-to-head, same harness, all 8 pairs
+ablation: full
+run_baselines: true
+
+# all 8 viable pairs (larger -> smaller as source -> target), ranked by overlap
+pairs:
+  - [Books, Movies_and_TV]
+  - [Books, Toys_and_Games]
+  - [Movies_and_TV, Toys_and_Games]
+  - [Movies_and_TV, CDs_and_Vinyl]
+  - [Books, CDs_and_Vinyl]
+  - [Movies_and_TV, Video_Games]
+  - [Toys_and_Games, Video_Games]
+  - [Books, Video_Games]
