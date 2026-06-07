@@ -1,9 +1,10 @@
 # Improvements — fixing the EMCDR failure modes
 
 _Companion to `RESULTS.md`. Branch: `emcdr-improvements`. The per-pair winner analysis
-(`RESULTS.md` §3) exposed four failure modes; this doc scopes a fix for each — named to the
+(`RESULTS.md` §3) exposed the failure modes; this doc scopes a fix for each — named to the
 cross-domain-recommendation literature **and** wired to this repo — and reports **measured
-results** for the two P0 fixes (§C1, §A1), which were run end-to-end._
+results** for five fixes (A1, C1, B1, C2, B2), all run end-to-end. See the Summary below for the
+final outcome._
 
 All measured numbers are Recall@10, `full` ablation, mean over 3 negative-sampling seeds, on the
 identical cold-start cohort as `RESULTS.md`. They reuse the cached `full` per-vertical recommenders
@@ -11,6 +12,48 @@ identical cold-start cohort as `RESULTS.md`. They reuse the cached `full` per-ve
 whole P0 sweep took minutes. EMCDR here differs ~0.003 from `RESULTS.md` because the mapping is
 retrained under torch 2.9.1 vs the original 2.5.1; the recommender checkpoints are byte-identical, so
 all comparisons **within this run** are exact and fair.
+
+## Summary — what changed and what it bought
+
+**Starting point** (`RESULTS.md` §3): the 8-pair EMCDR beat the deployed MostPop fallback
+everywhere, but lost to a **training-free content-cosine** baseline on the 3 thin Video-Games pairs,
+and to **target-MF** on Movies→Toys. Five fixes were implemented and measured end-to-end:
+
+| fix | what it is | measured outcome |
+|---|---|---|
+| **A1** | regularized **linear** mapping (vs the ~33k-param MLP) | +0.01–0.02 R@10 on the 5 data-rich pairs; **fixes the Movies→Toys upset** (0.289→0.303). No help on the thin VG pairs. |
+| **C1** | content-collaborative **gating** (not score-blending) | the additive blend **fails** (destructive interference); the overlap-**gated** best-of lifts mean R@10 **0.266 → 0.299**. |
+| **B1** | content-grounded target item tower (freeze `id_factor`) | fixes the VG collapse: VG EMCDR **+38%**, flips **Books→VG** to a win. It's the *freeze* that matters, not the warm-start. |
+| **C2** | residual content-conditioned bridge | **negative result** — does not beat content; the learned residual doesn't generalize from thin overlap. The *wrong* lever. |
+| **B2** | 3-core Video Games (denser target + ~2× overlap) | flips **Movies→VG** to a win (0.339 vs 0.303) and widens Books→VG. The *right* lever for the thin pairs. |
+
+**Combined deployable policy:** regularized **linear mapping** everywhere (A1) + **content-grounded
+target tower** for sparse targets (B1) + **3-core** for the sparse VG target (B2) + a serve-time
+**overlap gate to content** where it still wins (C1). On the 5-core 8-pair set, mean R@10 rose from
+**0.266 → 0.307** (A1 + C1); with B1/B2 the learned model went from losing 3 pairs to losing 1.
+
+**Final scorecard — best model per pair** (✅ = our learned EMCDR is best; ❌ = content-transfer wins):
+
+| pair | best model | beats content? | beats MostPop? |
+|---|---|:--:|:--:|
+| Books → Movies&TV | EMCDR (linear) | ✅ | ✅ |
+| Books → Toys&Games | EMCDR (linear) | ✅ | ✅ |
+| Movies&TV → Toys&Games | EMCDR (linear) | ✅ | ✅ |
+| Movies&TV → CDs&Vinyl | EMCDR (linear) | ✅ | ✅ |
+| Books → CDs&Vinyl | EMCDR (linear) | ✅ | ✅ |
+| Movies&TV → Video Games | EMCDR (B1 + B2 3-core) | ✅ | ✅ |
+| Books → Video Games | EMCDR (B1 + B2 3-core) | ✅ | ✅ |
+| Toys&Games → Video Games | content-transfer (gated) | ❌ | ✅ |
+
+**Net: the learned EMCDR is the best model on 7 of 8 pairs (up from 5/8), and every pair beats the
+deployed MostPop fallback.** The lone holdout — Toys→VG — has the strongest content affinity of any
+pair, so the C1 gate ships content there. *Caveat:* the two Video-Games rows use the 3-core setup, so
+their absolute R@10 is **not** comparable to the 5-core rows; the ✅/❌ is the per-pair, like-for-like
+signal.
+
+**Also produced:** a reusable diagnostic — the **warm-oracle** (rank cold users by their real target
+embedding) — which cheaply indicates, *before* building any bridge, whether a pair's collaborative
+signal can rival content. (B2 showed it is a strong reference, but not a strict ceiling.)
 
 ## Priority roadmap
 
