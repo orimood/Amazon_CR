@@ -16,7 +16,8 @@ import torch.nn as nn
 
 class HybridRecommender(nn.Module):
     def __init__(self, n_users: int, n_items: int, n_cats: int, d: int,
-                 ablation: str, use_pop: bool, text_dim: int, device: torch.device):
+                 ablation: str, use_pop: bool, text_dim: int, device: torch.device,
+                 store=None, text_init: bool = False, freeze_id: bool = False):
         super().__init__()
         self.d = d
         self.device = device
@@ -24,6 +25,8 @@ class HybridRecommender(nn.Module):
         self.use_text = ablation in ("full", "text_only")
         self.use_cat = ablation in ("full", "cats_only")
         self.use_pop = bool(use_pop) and ablation != "id_only"
+        self.text_init = bool(text_init)
+        self.freeze_id = bool(freeze_id)
 
         self.user_emb = nn.Embedding(n_users, d)
         self.id_factor = nn.Embedding(n_items, d)
@@ -38,6 +41,23 @@ class HybridRecommender(nn.Module):
         nn.init.normal_(self.id_factor.weight, std=0.01)
         if self.use_cat:
             nn.init.normal_(self.cat_table.weight, std=0.01)
+
+        # B1 (IMPROVEMENTS §B1): content-ground the per-item id factors so a sparse target
+        # (e.g. Video Games: 22.7k items, 15% retention) does not rely on free per-item
+        # parameters that barely move on rare items. Init values are saved in the state_dict,
+        # so a model loaded later reproduces this behaviour without re-passing the flags.
+        if self.text_init:
+            if store is None:
+                raise ValueError("text_init=True requires the item-feature store for warm-start")
+            P = torch.randn(text_dim, d) / (text_dim ** 0.5)        # fixed random projection
+            with torch.no_grad():
+                proj = torch.from_numpy(store.text_emb).float() @ P  # (n_items, d), content anchor
+                self.id_factor.weight.copy_(proj)
+        elif self.freeze_id:
+            with torch.no_grad():
+                self.id_factor.weight.zero_()                        # item tower = pure content branch
+        if self.freeze_id:
+            self.id_factor.weight.requires_grad_(False)
 
     # --- item tower ---
     def item_embedding(self, item_idx_np, store) -> torch.Tensor:

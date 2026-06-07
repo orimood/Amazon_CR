@@ -15,12 +15,18 @@ class Config:
     tag: str = "full"                 # checkpoint namespace: keeps smoke != full caches
     rec_tag: Optional[str] = None     # if set, recommenders load from THIS tag (reuse a
                                       # cached per-vertical layer) while mappings/results use `tag`
+    rec_tag_overrides: dict = field(default_factory=dict)  # {vertical: tag} — per-vertical recommender
+                                      # tag override (e.g. point only the Video_Games target at a B1
+                                      # recommender while sources stay on the cached `full` layer)
     device: str = "auto"              # auto | cpu | mps | cuda
     seed: int = 42
 
     # model dims
     d: int = 64
     use_pop: bool = True
+    # B1 (IMPROVEMENTS §B1): content-ground the per-item id factors for sparse targets.
+    text_init: bool = False           # warm-start id_factor from a fixed projection of MiniLM text
+    freeze_id: bool = False           # freeze id_factor (zeroed unless text_init) -> content-only item tower
 
     # per-vertical recommender (BPR)
     rec_epochs: int = 15
@@ -76,11 +82,17 @@ class Config:
     def to_dict(self) -> dict:
         return asdict(self)
 
+    # which recommender tag a given vertical resolves to: per-vertical override first, then
+    # the run-wide rec_tag, then the results tag. Lets one run mix a B1 target recommender
+    # with the cached `full` source recommenders.
+    def rec_tag_for(self, vertical: str) -> str:
+        return (self.rec_tag_overrides or {}).get(vertical) or self.rec_tag or self.tag
+
     # convenience: per-vertical recommender checkpoint dir.
     # Uses rec_tag when set so a results run can reuse a previously-cached recommender layer
     # (e.g. the heavy `full` recommenders) without retraining or clobbering the original results.
     def rec_dir(self, vertical: str, ablation: str) -> Path:
-        return Path(self.models_root) / "recommenders" / f"{vertical}__{ablation}__{self.rec_tag or self.tag}"
+        return Path(self.models_root) / "recommenders" / f"{vertical}__{ablation}__{self.rec_tag_for(vertical)}"
 
     # convenience: per-pair mapping checkpoint dir
     def map_dir(self, src: str, tgt: str, ablation: str) -> Path:

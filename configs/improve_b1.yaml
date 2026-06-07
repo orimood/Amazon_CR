@@ -1,0 +1,49 @@
+# B1a — content-grounded target item tower (freeze): fix the Video Games collapse.
+# Retrains ONLY the Video_Games recommender with freeze_id (id_factor zeroed+frozen -> the item
+# embedding is a pure content function: text_proj(MiniLM) + cat + pop). Source recommenders load
+# from the cached `full` tag (their id_factor is never used downstream; only user_emb feeds the
+# mapping). Mapping = regularized linear (A1). Runs only the 3 Video Games target pairs.
+#   PYTHONPATH=src python -m cdr.run_grid --config configs/improve_b1.yaml
+name: b1_freeze
+tag: b1
+rec_tag: full
+rec_tag_overrides: {Video_Games: b1}   # only VG trains+caches a B1 recommender
+device: cpu
+seed: 42
+d: 64
+use_pop: true
+text_init: false
+freeze_id: true                         # B1a: content-only item tower for the (sparse) target
+
+rec_epochs: 15
+rec_lr: 0.01
+rec_weight_decay: 1.0e-6
+rec_batch_size: 4096
+rec_steps_per_epoch: null
+subsample_users: null
+
+map_hidden: []                          # linear mapping (A1) so B1's effect is measured on the best map
+map_epochs: 200
+map_lr: 0.001
+map_weight_decay: 1.0e-4
+map_batch_size: 1024
+map_dropout: 0.2
+map_cos_weight: 0.5
+map_train_frac: 0.8
+
+eval_ks: [10, 20]
+eval_n_neg: 100
+eval_seeds: [0, 1, 2]
+max_eval_users: null
+
+run_baselines: true
+run_hybrid: true
+hybrid_alphas: [0.0, 0.5, 1.0]
+
+ablation: full
+ablations: [full]
+
+pairs:
+  - [Movies_and_TV, Video_Games]
+  - [Toys_and_Games, Video_Games]
+  - [Books, Video_Games]

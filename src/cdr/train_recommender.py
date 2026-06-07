@@ -39,6 +39,7 @@ def train_recommender(vd: VerticalData, cfg: Config, ablation: str,
     model = HybridRecommender(
         vd.n_users, vd.n_items, vd.n_cats, cfg.d, ablation,
         cfg.use_pop, vd.store.text_dim, device,
+        store=vd.store, text_init=cfg.text_init, freeze_id=cfg.freeze_id,
     ).to(device)
 
     # cache reuse only when training the full vertical (not a pair-specific subsample)
@@ -87,7 +88,8 @@ def train_recommender(vd: VerticalData, cfg: Config, ablation: str,
     save_json(
         {"vertical": vd.vertical, "ablation": ablation, "d": cfg.d,
          "n_users": vd.n_users, "n_items": vd.n_items, "n_cats": vd.n_cats,
-         "use_pop": model.use_pop, "tag": cfg.tag, "n_train_pos": int(N)},
+         "use_pop": model.use_pop, "text_init": model.text_init, "freeze_id": model.freeze_id,
+         "tag": cfg.rec_tag_for(vd.vertical), "n_train_pos": int(N)},
         rec_dir / "meta.json",
     )
     return model

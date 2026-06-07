@@ -1,0 +1,48 @@
+# B1b — content-grounded target item tower (text warm-start, trainable).
+# Same as improve_b1.yaml but id_factor is INITIALIZED from a fixed projection of the MiniLM text
+# (content anchor) and stays TRAINABLE, so rare items keep a sensible content prior while frequent
+# items can still specialize. Compare against B1a (freeze) and the A1 baseline on the VG pairs.
+#   PYTHONPATH=src python -m cdr.run_grid --config configs/improve_b1t.yaml
+name: b1_textinit
+tag: b1t
+rec_tag: full
+rec_tag_overrides: {Video_Games: b1t}
+device: cpu
+seed: 42
+d: 64
+use_pop: true
+text_init: true                         # B1b: warm-start id_factor from MiniLM text (trainable)
+freeze_id: false
+
+rec_epochs: 15
+rec_lr: 0.01
+rec_weight_decay: 1.0e-6
+rec_batch_size: 4096
+rec_steps_per_epoch: null
+subsample_users: null
+
+map_hidden: []
+map_epochs: 200
+map_lr: 0.001
+map_weight_decay: 1.0e-4
+map_batch_size: 1024
+map_dropout: 0.2
+map_cos_weight: 0.5
+map_train_frac: 0.8
+
+eval_ks: [10, 20]
+eval_n_neg: 100
+eval_seeds: [0, 1, 2]
+max_eval_users: null
+
+run_baselines: true
+run_hybrid: true
+hybrid_alphas: [0.0, 0.5, 1.0]
+
+ablation: full
+ablations: [full]
+
+pairs:
+  - [Movies_and_TV, Video_Games]
+  - [Toys_and_Games, Video_Games]
+  - [Books, Video_Games]

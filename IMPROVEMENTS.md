@@ -19,7 +19,7 @@ all comparisons **within this run** are exact and fair.
 | **C1** | Content-collaborative **gating** (not blending) | EMCDR loses to feat-transfer on thin pairs | **measured** | low | gating works (+); naive blend fails |
 | **A1** | Regularized **linear** mapping | thin-overlap sharp-minima; rich-pair headroom | **measured** | low | +0.01–0.02 on rich pairs; fixes Movies→Toys |
 | — | **C1 + A1 combined** (gated linear) | both | **measured** | low | **mean R@10 0.266 → 0.307 (+15%)** |
-| B1 | Content-warm-start target item factors | starved `V_tgt` on Video Games | specced | med | needs recommender retrain |
+| **B1** | Content-grounded target item tower (freeze) | starved `V_tgt` on Video Games | **measured** | low | **VG EMCDR +38%; flips Books→VG to a win** |
 | A2 | Sharpness-Aware Minimization (SAM) on mapping | sharp minima | specced | med | — |
 | B2 | 3-core relaxation on sparse verticals | low retention + sub-floor pairs | specced | med | data re-prep |
 | C2 | Content-conditioned mapping (CATN-style) | unified mapping ignores content | specced | high | — |
@@ -108,6 +108,50 @@ but not sufficient for the thin ones.
 
 ---
 
+## B1 — Content-grounded target item tower (MEASURED)
+
+**Diagnosis (data).** The Video-Games collapse is **target-side**: 22.7k items, 15% 5-core
+retention, 604k positives → the learned per-item `id_factor` barely moves on rare items, so `V_tgt`
+is noisy and the mapping lands in a weak space. A1 (smaller mapping) did **not** help here — it isn't
+a mapping problem. Fix: stop relying on free per-item parameters and ground the item embedding in
+the frozen MiniLM content space.
+
+**What was implemented.** A `freeze_id` / `text_init` knob on the item tower (`src/cdr/models.py`
+`HybridRecommender`; `src/cdr/config.py`; `src/cdr/train_recommender.py`) plus `rec_tag_overrides`
+so **only the Video-Games target recommender** is retrained content-grounded while the source
+recommenders load from the cached `full` tag. This is exact, not an approximation: a source's
+`id_factor` is never used downstream — only its `user_emb` feeds the mapping. Two variants:
+- **B1a (freeze):** `id_factor` zeroed and frozen → item embedding = `text_proj(MiniLM) + cat + pop` (pure content).
+- **B1b (text warm-start):** `id_factor` initialized from a fixed projection of MiniLM text, left trainable.
+
+**Result — B1a fixes the collapse; B1b does not.** EMCDR Recall@10 on the VG pairs (linear mapping throughout):
+
+| VG pair | overlap | base (A1) | **B1a freeze** | B1b warm-start | content | overall best |
+|---|--:|--:|--:|--:|--:|---|
+| Movies&TV → Video Games | 16,504 | 0.159 | **0.219** | 0.158 | 0.246 | content 0.246 |
+| Toys&Games → Video Games | 14,517 | 0.160 | **0.217** | 0.160 | 0.289 | content 0.289 |
+| Books → Video Games | 11,801 | 0.153 | **0.215** | 0.151 | 0.211 | **EMCDR/B1a 0.215** |
+| **mean (VG)** | | 0.157 | **0.217 (+38%)** | 0.156 | | |
+
+Two findings: (1) **content-grounding the target recommender lifts the learned model +38%** on the
+exact pairs it was collapsing on — it **flips Books→Video Games (thinnest overlap, weakest content
+transfer) to an EMCDR win** and cuts the gap to content from −0.05/−0.13 down to −0.03/−0.07 on the
+other two. (2) **It is the *freezing* that matters, not the warm-start** — B1b (trainable from a text
+init) drifts straight back to baseline as BPR re-overfits the sparse per-item factors; only B1a (no
+free per-item parameters) holds the content structure. This confirms the collapse was caused by free
+per-item parameters on a sparse catalog, not by a bad initialization. B1 has **no effect on the rich
+pairs** (it only changes the VG target recommender).
+
+**Repo wiring (done):** `src/cdr/models.py`, `src/cdr/config.py`, `src/cdr/train_recommender.py`;
+configs `configs/improve_b1.yaml` (freeze), `configs/improve_b1t.yaml` (warm-start). Retrains only
+the Video-Games recommender (~2 min); sources reuse the cached `full` layer.
+
+**Next:** apply B1a content-grounding to *all* targets (not just VG) and re-run the full grid — it may
+help other targets' long tails too; then re-tune the C1 gate, since B1a narrows the EMCDR–content gap
+enough that a per-user gate could now prefer the learned model on more pairs.
+
+---
+
 ## Combined policy (MEASURED) — gated linear
 
 Use the **regularized linear mapping everywhere** (A1; ≥ MLP on 6/8, never materially worse) and
@@ -124,19 +168,15 @@ Use the **regularized linear mapping everywhere** (A1; ≥ MLP on 6/8, never mat
 This is the recommended deployable configuration: one cheap mapping change + one serve-time gating
 rule, no recommender retraining, and it beats the MostPop fallback on all 8 pairs by construction.
 
+**B1 on top of this** makes the *learned* model competitive on the Video-Games pairs (mean VG EMCDR
+0.157 → 0.217, flipping Books→Video Games to an EMCDR win). It changes the gated mean only slightly
+(content still edges the other two VG pairs), but it removes the hard dependence on the content
+fallback — the learned cross-domain model is no longer collapsing where overlap is thinnest.
+
 ---
 
 ## Specced (not yet run) — needs retraining or data re-prep
 
-- **B1 — content-warm-start target item factors (P1, the likely thin-pair fix).** The Video-Games
-  collapse is target-side: 22.7k items, 15% 5-core retention → weak learned `V_tgt`. Initialize
-  `id_factor` from a projection of the frozen MiniLM text emb, or freeze `id_factor` and lean on the
-  content branch, so target factors are grounded in content rather than learned from 604k positives.
-  `src/cdr/models.py` (`HybridRecommender.__init__`, add a `text_init`/`freeze_id` flag) +
-  `src/cdr/train_recommender.py`. **Requires retraining the Video-Games recommender** (cheap — it is
-  the smallest vertical), so deferred from the cache-reuse P0 pass. *Validate:* warm-eval R@10 on
-  Video Games before/after, then re-check the gated policy (B1 may let EMCDR, not content, win the
-  thin pairs).
 - **A2 — Sharpness-Aware Minimization on the mapping (P2).** SCDR's exact remedy for the sharp-minima
   cause; wrap the Adam step in `src/cdr/train_mapping.py` with a perturbation step. Complementary to
   A1 (A1 shrinks the model; A2 flattens the loss).
@@ -179,5 +219,7 @@ set aside* (project decision, 2026-06-04) and is not re-recommended here.
 # both reuse the cached `full` recommenders (rec_tag) — minutes, not hours
 PYTHONPATH=src python -m cdr.run_grid --config configs/improve_mlp.yaml   # Arm 1: MLP mapping + hybrid sweep
 PYTHONPATH=src python -m cdr.run_grid --config configs/improve_lin.yaml   # Arm 2: linear+reg mapping + hybrid sweep
-# per-experiment JSONs: results/*__full__improve_{mlp,lin}.json ; grids: results/GRID__improve_{mlp,lin}.json
+PYTHONPATH=src python -m cdr.run_grid --config configs/improve_b1.yaml    # B1a: content-grounded VG target (freeze)
+PYTHONPATH=src python -m cdr.run_grid --config configs/improve_b1t.yaml   # B1b: content warm-start (trainable)
+# per-experiment JSONs: results/*__full__{improve_mlp,improve_lin,b1,b1t}.json ; grids: results/GRID__*.json
 ```
