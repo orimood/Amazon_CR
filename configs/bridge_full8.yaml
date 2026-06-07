@@ -1,0 +1,58 @@
+# Full deliverable run for the history-grounded bridge — ALL 8 viable pairs.
+# Same settings as bridge_full.yaml (the new bridge idea), expanded from the 2-pair
+# Phase-5 confirmation to the full 8-pair deliverable grid (the pairs in RESULTS.md).
+# tag=bridge_full reuses the already-cached Books/Movies/Video_Games recommenders;
+# Toys_and_Games + CDs_and_Vinyl recommenders are trained on first use and cached.
+# CPU (Apple MPS yields NaN for the recommenders). Books recommender is ~7.5M positives.
+#   PYTHONPATH=src python -m cdr.bridge --config configs/bridge_full8.yaml
+name: bridge_full8
+tag: bridge_full
+device: cpu
+seed: 42
+d: 64
+use_pop: true
+
+# per-vertical recommenders -> frozen item embeddings (trained on all users; reused per pair)
+rec_epochs: 15
+rec_lr: 0.01
+rec_weight_decay: 1.0e-6
+rec_batch_size: 4096
+rec_steps_per_epoch: null
+subsample_users: null
+
+# history-grounded bridge
+pool: mean
+aug_k: 4
+aug_min_frac: 0.4
+bridge_hidden: [128, 128]
+bridge_bottleneck: null
+bridge_lr: 0.001
+bridge_weight_decay: 1.0e-5
+bridge_dropout: 0.2
+bridge_epochs: 80
+bridge_batch: 1024
+bridge_neg: 1
+early_stop_patience: 8
+semisup_weight: 0.1
+semisup_batch: 512
+semisup_pool_cap: 20000
+map_train_frac: 0.8
+
+# evaluation
+eval_ks: [10, 20]
+eval_n_neg: 100
+eval_seeds: [0, 1, 2]
+max_eval_users: null
+ablation: full
+run_baselines: true
+
+# all 8 viable pairs (the deliverable grid in docs/RESULTS.md)
+pairs:
+  - [Books, Movies_and_TV]
+  - [Books, Toys_and_Games]
+  - [Books, CDs_and_Vinyl]
+  - [Books, Video_Games]
+  - [Movies_and_TV, Toys_and_Games]
+  - [Movies_and_TV, CDs_and_Vinyl]
+  - [Movies_and_TV, Video_Games]
+  - [Toys_and_Games, Video_Games]

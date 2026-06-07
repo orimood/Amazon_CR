@@ -12,18 +12,28 @@ The cross-vertical bridge is item-side: hierarchical categories + a text embeddi
 
 ```
 Amazon_CR/
-├── CRISP-DM User Guide.pdf       # methodology reference (1999 paper)
-├── HW2 - Template.docx           # current homework — filling in §2.x and §3.x
-├── HW2 - Template.bak.docx       # backup before automated edits
-├── submitted/                    # previous-phase deliverables
-│   ├── HW1_CDR (2).docx
-│   └── cross_domain_recsys_project (1).docx
+├── CRISP-DM User Guide.pdf        # methodology reference (1999 paper)
+├── HW2 - Template.docx            # current homework deliverable
+├── requirements.txt               # data-pipeline deps
+├── requirements-modeling.txt      # modeling deps (torch, sentence-transformers)
+├── docs/                          # project documentation
+│   ├── progress.md                # this file
+│   ├── section3_preprocessing_plan.md
+│   ├── RESULTS.md                 # full-run results write-up
+│   └── MODEL_CARD.md              # §4 model architecture + how-to-run
+├── submitted/                     # previous-phase deliverables (HW1)
+├── configs/                       # YAML experiment configs (smoke / full / bridge_*)
+├── src/cdr/                       # EMCDR + history-grounded bridge pipeline
+├── notebooks/                     # eda.ipynb, data_prep.ipynb
+├── figures/                       # report figures + make_figures.py
 ├── data/
-│   ├── download.py               # reproducible HuggingFace pull
-│   └── raw/                      # gitignored — not committed
-│       ├── reviews/   *.csv      # 0-core ratings per vertical
-│       └── meta/      *.jsonl    # raw item metadata per vertical
-├── progress.md                   # this file
+│   ├── download.py                # reproducible HuggingFace pull
+│   ├── embed_all.py               # full MiniLM embedding pass
+│   ├── raw/                       # gitignored — reviews/*.csv, meta/*.jsonl
+│   └── processed/                 # gitignored — per-vertical dirs + pairs/ bridges
+├── models/                        # gitignored — recommenders/, mappings/, bridges/, logs/
+├── results/                       # tracked *.json metrics (model weights gitignored)
+├── backups/                       # gitignored — pre-edit .docx snapshots, Archive.zip
 └── .gitignore
 ```
 
@@ -170,4 +180,16 @@ New module `src/cdr/bridge.py` (config knobs in `config.py`; `configs/bridge_{sm
 - **Semi-supervised CORAL alignment** — source-only/target-only users pull the bridge output distribution toward the real target-user distribution.
 - **Validation early-stopping + best-on-val model selection**, per-user temporal hold-out (also fixes the global-split untrained-user issue). Reuses the recommenders only for frozen item embeddings + the existing eval helpers.
 
-**Status: written, NOT yet execution-tested.** PyTorch (and most of `.venv`) was iCloud-evicted mid-session (`libtorch_cpu.dylib` showed 0 on-disk blocks), so any python importing torch/yaml hangs on re-download. Verified what's possible without it: `py_compile` clean (no syntax errors), config keys cross-checked against the dataclass, full static logic review. **To validate once `.venv` is restored:** `PYTHONPATH=src python -m cdr.bridge --config configs/bridge_smoke.yaml` (tiny, CPU), then `configs/bridge_full.yaml` for the Phase-5 confirmation (thin Books→Video_Games must reach ≥ the content baseline; rich Books→Movies must not regress).
+**Status (2026-06-02): written; not yet execution-tested at the time of this note.** PyTorch (and most of `.venv`) was iCloud-evicted mid-session (`libtorch_cpu.dylib` showed 0 on-disk blocks), so any python importing torch/yaml hangs on re-download. Verified what's possible without it: `py_compile` clean (no syntax errors), config keys cross-checked against the dataclass, full static logic review. **Now executed on full data — see the next section.**
+
+## §4 Modeling — history-bridge full-data run (2026-06-04)
+
+Branch `emcdr-modeling` at `dd10d32` (the history-grounded bridge). Ran the bridge on all 8 viable pairs via `configs/bridge_full8.yaml` (`tag=bridge_full`; reuses the cached per-vertical recommenders, CPU). Eval: per-user temporal hold-out, leave-one-out, 1 held-out target positive + 100 **uniform** sampled negatives, mean over 3 seeds. Full table in `docs/RESULTS.md` §4; per-pair JSON in `results/bridge__*__bridge_full.json` and `results/BRIDGE_GRID__bridge_full.json`.
+
+**Result (R@10, mean over 8 pairs):** bridge **0.394** · MostPop **0.429** · feature-transfer **0.204** · random **0.098**.
+
+- The bridge beats random and content feature-transfer on **8/8** pairs (≈4× random, ≈2× feature-transfer) — it transfers genuine cross-vertical signal.
+- It does **not** beat the MostPop popularity prior on **6/8** pairs (wins only Movies&TV→CDs +4% and Toys&Games→Video Games +13%); on average ~8% below MostPop on R@10.
+- **Why MostPop is the high bar:** under *uniform* negatives a (usually popular) held-out positive easily outranks 100 random unpopular negatives, so the popularity prior is very strong. A popularity-aware / hard-negative eval (which would lower MostPop sharply) is out of scope for this `dd10d32` run.
+
+**Net:** on honest uniform-negative eval the history-bridge learns transferable taste (clears content + random everywhere) but does not surpass popularity on most pairs.

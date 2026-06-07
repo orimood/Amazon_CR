@@ -54,7 +54,7 @@ def save_json(obj, path: str | Path) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     with open(tmp, "w") as fh:
         json.dump(obj, fh, indent=2, default=_json_default)
-    os.replace(tmp, path)          # atomic (iCloud-safe, per progress.md note)
+    os.replace(tmp, path)          # atomic (iCloud-safe, per docs/progress.md note)
 
 
 def load_json(path: str | Path):

@@ -69,3 +69,42 @@ add little once text is present.*
 - **Thin-overlap underperformance** (the Video Games pairs) is the R1/R3 diagnostic target: grow
   overlap (3-core contingency) and/or raise mapping regularization.
 - Per-experiment numbers (all metrics, per-seed, mean±std) are in `results/*.json`; weights are gitignored.
+
+## 4. History-grounded bridge — full-data run (8 pairs, 2026-06-04)
+
+_Run: `configs/bridge_full8.yaml` (history-bridge, `tag=bridge_full`), CPU. Source: `results/BRIDGE_GRID__bridge_full.json` + `results/bridge__{src}__{tgt}__full__bridge_full.json`._
+
+This is the history-grounded bridge (source-user rep = learned mean-pool over the embeddings of
+the user's source items; end-to-end BPR-on-target; sub-history augmentation; semi-supervised
+CORAL), run on all 8 viable pairs. **Different evaluation regime from §1–§3 — do not
+cross-compare the absolute numbers with the EMCDR tables above.**
+
+**Setup.** Per-user temporal hold-out; leave-one-out with **uniform** sampled negatives (1 held-out
+target positive + 100 uniform-random unseen negatives); R@10/N@10 averaged over 3 seeds. Baselines:
+MostPop (target popularity), feature-transfer (content cosine in the shared MiniLM space), Random (floor).
+
+| pair | cohort | bridge R@10 | bridge N@10 | MostPop | feat-transfer | Random | bridge vs MostPop |
+|---|--:|--:|--:|--:|--:|--:|:--:|
+| Books → Movies&TV | 21785 | 0.445 | 0.269 | 0.468 | 0.199 | 0.097 | −5% |
+| Books → Toys&Games | 15119 | 0.434 | 0.261 | 0.456 | 0.227 | 0.093 | −5% |
+| Books → CDs&Vinyl | 5508 | 0.335 | 0.188 | 0.383 | 0.170 | 0.096 | −13% |
+| Books → Video Games | 2352 | 0.326 | 0.174 | 0.465 | 0.187 | 0.095 | −30% |
+| Movies&TV → Toys&Games | 9189 | 0.363 | 0.210 | 0.439 | 0.218 | 0.099 | −17% |
+| Movies&TV → CDs&Vinyl | 6915 | 0.377 | 0.217 | 0.363 | 0.208 | 0.099 | **+4%** |
+| Movies&TV → Video Games | 3288 | 0.432 | 0.258 | 0.469 | 0.211 | 0.100 | −8% |
+| Toys&Games → Video Games | 2897 | 0.436 | 0.259 | 0.385 | 0.214 | 0.103 | **+13%** |
+| **mean** | — | **0.394** | **0.227** | **0.429** | **0.204** | **0.098** | **−8%** |
+
+**Findings.**
+- **The bridge beats Random and content feature-transfer on 8/8 pairs** (≈4× random, ≈2×
+  feature-transfer on R@10) — it learns genuinely transferable cross-vertical signal.
+- **It does NOT beat the MostPop popularity prior on 6/8 pairs** (wins only Movies&TV→CDs +4% and
+  Toys&Games→Video Games +13%); on average it trails MostPop by ~8% R@10.
+- **Why MostPop is so strong here:** under *uniform* negative sampling, a (usually popular) held-out
+  positive easily outranks 100 random unpopular negatives, so the popularity prior is a very high
+  bar. A popularity-aware ("hard negative") eval would lower MostPop sharply; that protocol is out
+  of scope for this run.
+
+**Read.** On honest uniform-negative eval the history-bridge sits between content-transfer and the
+popularity prior: it clearly transfers taste (beats content + random everywhere) but does not
+surpass MostPop on most pairs.
