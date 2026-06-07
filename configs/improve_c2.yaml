@@ -1,0 +1,44 @@
+# C2 — residual content-conditioned bridge for the thin Video Games pairs.
+# Reuses cached full source recommenders + the B1 content-grounded Video_Games target
+# (rec_tag_overrides). Trains only the small residual bridge per pair (BPR on overlap-train
+# users' target positives) — minutes. Run with the dedicated driver:
+#   PYTHONPATH=src python -m cdr.run_c2 --config configs/improve_c2.yaml
+name: c2
+tag: c2
+rec_tag: full
+rec_tag_overrides: {Video_Games: b1}   # content-grounded VG target (from B1a)
+device: cpu
+seed: 42
+d: 64
+use_pop: true
+text_init: false
+freeze_id: false                        # loading only; B1 zeros are baked into the saved checkpoint
+
+# (recommender knobs unused — models load from cache)
+rec_epochs: 15
+rec_lr: 0.01
+rec_weight_decay: 1.0e-6
+rec_batch_size: 4096
+rec_steps_per_epoch: null
+subsample_users: null
+
+map_train_frac: 0.8                     # MUST match the B1/EMCDR run so the cold-eval cohort is identical
+
+# C2 residual bridge training
+c2_epochs: 30
+c2_lr: 0.01
+c2_l2: 1.0e-5
+
+eval_ks: [10, 20]
+eval_n_neg: 100
+eval_seeds: [0, 1, 2]
+max_eval_users: null
+
+run_baselines: true
+ablation: full
+ablations: [full]
+
+pairs:
+  - [Movies_and_TV, Video_Games]
+  - [Toys_and_Games, Video_Games]
+  - [Books, Video_Games]

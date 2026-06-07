@@ -52,6 +52,13 @@ class Config:
     eval_seeds: list = field(default_factory=lambda: [0, 1, 2])
     max_eval_users: Optional[int] = None
 
+    # C2 residual content-conditioned bridge (IMPROVEMENTS §C2):
+    # score = c2_content_scale*cos(profile_src, text_tgt) + (Linear[U_src; profile_src])·V_tgt,
+    # trained with BPR on overlap-train users' target positives (run_c2.py).
+    c2_epochs: int = 30
+    c2_lr: float = 1e-2
+    c2_l2: float = 1e-5
+
     # content-collaborative hybrid scorer (IMPROVEMENTS §C1): per-user z-scored blend of the
     # EMCDR score and the content-cosine (feature-transfer) score, swept over alpha.
     # alpha=1.0 -> pure EMCDR, alpha=0.0 -> pure content (both reproduce their base model exactly).

@@ -20,6 +20,8 @@ all comparisons **within this run** are exact and fair.
 | **A1** | Regularized **linear** mapping | thin-overlap sharp-minima; rich-pair headroom | **measured** | low | +0.01–0.02 on rich pairs; fixes Movies→Toys |
 | — | **C1 + A1 combined** (gated linear) | both | **measured** | low | **mean R@10 0.266 → 0.307 (+15%)** |
 | **B1** | Content-grounded target item tower (freeze) | starved `V_tgt` on Video Games | **measured** | low | **VG EMCDR +38%; flips Books→VG to a win** |
+| **C2** | Residual content-conditioned bridge | beat content on the last 2 VG pairs | **measured** | low | does NOT beat content; ceiling diagnostic shows Toys→VG is unwinnable by any mapping |
+| **B2** | 3-core relaxation on Video Games | raise the target ceiling (Toys→VG) | **next** | med | the only lever that can beat content on Toys→VG |
 | A2 | Sharpness-Aware Minimization (SAM) on mapping | sharp minima | specced | med | — |
 | B2 | 3-core relaxation on sparse verticals | low retention + sub-floor pairs | specced | med | data re-prep |
 | C2 | Content-conditioned mapping (CATN-style) | unified mapping ignores content | specced | high | — |
@@ -175,17 +177,73 @@ fallback — the learned cross-domain model is no longer collapsing where overla
 
 ---
 
+## C2 — residual content-conditioned bridge, and the content ceiling (MEASURED)
+
+**Goal.** Beat content-transfer on the last two pairs it still wins (Movies/Toys → Video Games).
+
+**What was implemented (`src/cdr/run_c2.py`).** `score = content_scale·cos(profile_src, text_tgt) +
+(Linear[U_src; profile_src])·V_tgt`, trained with BPR on overlap-train users' target positives
+(reuses the cached `full` sources + the B1 VG target). Idea: keep content as a floor, learn a
+collaborative residual on top.
+
+**Result — C2 does NOT beat content; it underperforms even EMCDR(B1).**
+
+| pair | content | C2 | EMCDR(B1) | **warm-oracle (ceiling)** |
+|---|--:|--:|--:|--:|
+| Movies&TV → Video Games | 0.246 | 0.197 | 0.219 | 0.248 |
+| Toys&Games → Video Games | 0.289 | 0.176 | 0.217 | 0.189 |
+| Books → Video Games | 0.211 | 0.194 | 0.215 | 0.224 |
+
+The residual term's magnitude grew during BPR training and dominated the content floor (`content_scale`
+stayed ≈1), so C2 collapsed toward the learned term — the same destructive interference as the C1
+blend, now learned. The learned collaborative signal does not generalize from the ~10k overlap users
+to cold users, however it is conditioned.
+
+**The decisive diagnostic — the warm-oracle.** We then ranked the cold-eval users with their *real*
+target embedding `U_tgt` — an oracle that already knows their actual Video-Games taste. This is the
+**ceiling for any cold-start collaborative method**: you cannot map a cold user to anything better
+than their own true embedding. It settles whether "beat content" is even possible:
+
+- **Toys→VG: ceiling 0.189 ≪ content 0.289.** Even perfect knowledge of the user's VG embedding loses
+  to content by 0.10. **No mapping, bridge, or supervision augmentation can beat content here** — Toys
+  and Video Games share so much catalog semantics (franchises/hobby items) that text similarity is a
+  strictly better ranking signal than the sparse VG collaborative space. The only way to win is to
+  **raise the ceiling** (denser/richer target representation), not to build a cleverer bridge.
+- **Movies→VG: ceiling 0.248 ≈ content 0.246**, with EMCDR(B1) at 0.219 — i.e. ~0.03 of cold→warm
+  headroom is still on the table. Collaborative *can* tie content here, so a better-*supervised*
+  mapping is the route.
+- **Books→VG: ceiling 0.224 > content 0.211**, and EMCDR(B1) 0.215 already wins.
+
+**Revised "beat everything" verdict (what the experiments actually say):**
+- **Books→VG — already won** (B1).
+- **Movies→VG — winnable;** lever = *more mapping supervision* (SSCDR semi-supervised pseudo-labels /
+  overlap augmentation), **not** a fancier bridge. C2 was the wrong tool; the headroom is real.
+- **Toys→VG — not winnable by any cold-start mapping;** lever = **raise the target ceiling** (B2:
+  3-core relaxation on Video Games to recover interactions and lift the 15% retention; or a richer
+  item model) — or accept the content fallback, which the C1 gate already deploys.
+
+**Takeaway.** On the last two pairs the binding constraint is the **target-domain collaborative
+signal**, not the bridge. The intuitive next step (a content-aware bridge, C2) is measurably the
+wrong lever; B2 (more/denser target data) is the right one for Toys→VG, and supervision augmentation
+for Movies→VG. The warm-oracle is the cheap test to run *before* investing in any new bridge.
+
+---
+
 ## Specced (not yet run) — needs retraining or data re-prep
 
+- **B2 — 3-core relaxation on Video Games (now the prioritized next step for Toys→VG).** The warm-oracle
+  shows Toys→VG is unwinnable at the current VG representation (ceiling 0.189 < content 0.289); the only
+  way to beat content is to lift that ceiling. 3-core recovers VG interactions (retention 15% → higher),
+  densifies `V_tgt` and the warm user space, and also unlocks the 2 sub-floor pairs (Toys↔CDs 7.75k,
+  CDs↔VG 4.4k). Stage-A `k` change; re-baselines the cohort. *Validate:* re-measure the warm-oracle —
+  success = oracle rises above content.
+- **SSCDR semi-supervised augmentation (prioritized next step for Movies→VG).** Movies→VG has headroom
+  (ceiling 0.248 ≈ content, EMCDR 0.219); close the cold→warm gap with more bridge supervision —
+  pseudo-label non-overlap users via neighborhood inference, or mixup/multi-view augmentation of the
+  overlap pairs. Mapping-only, reuses cached recommenders.
 - **A2 — Sharpness-Aware Minimization on the mapping (P2).** SCDR's exact remedy for the sharp-minima
   cause; wrap the Adam step in `src/cdr/train_mapping.py` with a perturbation step. Complementary to
   A1 (A1 shrinks the model; A2 flattens the loss).
-- **B2 — 3-core relaxation on sparse verticals (P2).** The repo's own R1 contingency: raises
-  Video-Games retention/overlap and unlocks the 2 sub-floor pairs (Toys↔CDs 7.75k, CDs↔VG 4.4k).
-  Stage-A `k` change; re-baselines the cohort.
-- **C2 — content-conditioned mapping (P3).** Condition `f` on the user's source text profile
-  (CATN-style) so the learned bridge inherits content robustness — a learned alternative to the C1
-  gate. `MappingMLP` extra input + plumbing in `train_mapping.py`/`evaluate.py`.
 - **A3 — personalized / meta mapping (P3).** PTUPCDR (meta-network → per-user bridge), CDRNP (neural
   process), SSCDR (semi-supervised: non-overlap users/items + neighborhood inference). New model +
   training path; meta-learning usually wants *more* overlap, so validate specifically on the thin
@@ -221,5 +279,6 @@ PYTHONPATH=src python -m cdr.run_grid --config configs/improve_mlp.yaml   # Arm 
 PYTHONPATH=src python -m cdr.run_grid --config configs/improve_lin.yaml   # Arm 2: linear+reg mapping + hybrid sweep
 PYTHONPATH=src python -m cdr.run_grid --config configs/improve_b1.yaml    # B1a: content-grounded VG target (freeze)
 PYTHONPATH=src python -m cdr.run_grid --config configs/improve_b1t.yaml   # B1b: content warm-start (trainable)
-# per-experiment JSONs: results/*__full__{improve_mlp,improve_lin,b1,b1t}.json ; grids: results/GRID__*.json
+PYTHONPATH=src python -m cdr.run_c2   --config configs/improve_c2.yaml    # C2 residual bridge + warm-oracle ceiling
+# per-experiment JSONs: results/*__full__{improve_mlp,improve_lin,b1,b1t,c2}.json ; grids: results/GRID__*.json
 ```
