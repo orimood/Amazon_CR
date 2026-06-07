@@ -52,6 +52,13 @@ def _sample_candidates(tgt_users, held_items, tgt_seen, n_items, n_neg, rng):
     return cands
 
 
+def _zscore_rows(a: np.ndarray) -> np.ndarray:
+    """Per-row (per-user) standardization so differently-scaled scores can be blended."""
+    m = a.mean(axis=1, keepdims=True)
+    s = a.std(axis=1, keepdims=True)
+    return (a - m) / (s + 1e-8)
+
+
 def _rank_metrics(scores: np.ndarray, ks) -> dict:
     """scores: (n_users, C) with the positive at column 0. Strict-greater ranking."""
     pos = scores[:, :1]
@@ -107,20 +114,22 @@ def evaluate_pair(f: MappingMLP, src_model: HybridRecommender, tgt_model: Hybrid
         mapped = f(Us).detach()                                            # (n_ev, d)
         mean_user = tgt_model.user_emb.weight.mean(0, keepdim=True).detach()  # (1, d)
 
-    want_ft = cfg.run_baselines
-    if want_ft:
+    want_content = cfg.run_baselines or cfg.run_hybrid
+    if want_content:
         prof = torch.from_numpy(_source_text_profiles(src_vd, src_users)).to(device)  # (n_ev,384)
         prof = torch.nn.functional.normalize(prof, dim=-1)
         tgt_text = torch.nn.functional.normalize(
             torch.from_numpy(store.text_emb).to(device), dim=-1)            # (n_items,384)
 
-    models = ["emcdr"]
+    base_models = ["emcdr"]
     if cfg.run_baselines:
-        models += ["baseline_target_mf", "baseline_mostpop",
-                   "baseline_random", "baseline_feature_transfer"]
+        base_models += ["baseline_target_mf", "baseline_mostpop",
+                        "baseline_random", "baseline_feature_transfer"]
+    hybrid_models = [f"emcdr_hybrid@{a:g}" for a in cfg.hybrid_alphas] if cfg.run_hybrid else []
+    models = base_models + hybrid_models
 
     log(f"evaluate [{src_vd.vertical}->{tgt_vd.vertical}/{ablation}] cohort={len(ev)} "
-        f"n_neg={cfg.eval_n_neg} seeds={cfg.eval_seeds}")
+        f"n_neg={cfg.eval_n_neg} seeds={cfg.eval_seeds} hybrid={cfg.run_hybrid}")
 
     per_seed = {m: [] for m in models}
     n_ev = len(ev)
@@ -128,20 +137,28 @@ def evaluate_pair(f: MappingMLP, src_model: HybridRecommender, tgt_model: Hybrid
     for seed in cfg.eval_seeds:
         rng = np.random.default_rng(1000 + seed)
         cands = _sample_candidates(tgt_users, held_items, tgt_seen, n_items, cfg.eval_n_neg, rng)
-        scores = {m: np.empty((n_ev, cands.shape[1]), dtype=np.float64) for m in models}
+        scores = {m: np.empty((n_ev, cands.shape[1]), dtype=np.float64) for m in base_models}
+        content = np.empty((n_ev, cands.shape[1]), dtype=np.float64) if want_content else None
         for s in range(0, n_ev, chunk):
             e = min(s + chunk, n_ev)
             c = torch.as_tensor(cands[s:e], dtype=torch.long, device=device)   # (b, C)
             cand_emb = V[c]                                                     # (b, C, d)
             # emcdr
             scores["emcdr"][s:e] = (mapped[s:e].unsqueeze(1) * cand_emb).sum(-1).cpu().numpy()
+            if want_content:
+                content[s:e] = (prof[s:e].unsqueeze(1) * tgt_text[c]).sum(-1).cpu().numpy()
             if cfg.run_baselines:
                 scores["baseline_target_mf"][s:e] = (mean_user.unsqueeze(1) * cand_emb).sum(-1).cpu().numpy()
                 scores["baseline_mostpop"][s:e] = pop[cands[s:e]]
                 scores["baseline_random"][s:e] = rng.random((e - s, cands.shape[1]))
-                ct = torch.as_tensor(cands[s:e], dtype=torch.long, device=device)
-                scores["baseline_feature_transfer"][s:e] = (
-                    (prof[s:e].unsqueeze(1) * tgt_text[ct]).sum(-1).cpu().numpy())
+        if cfg.run_baselines:
+            scores["baseline_feature_transfer"] = content
+        # content-collaborative hybrid: per-user z-score, then blend (IMPROVEMENTS §C1).
+        # alpha=1 -> pure EMCDR ranking, alpha=0 -> pure content ranking (sanity endpoints).
+        if cfg.run_hybrid:
+            ze, zc = _zscore_rows(scores["emcdr"]), _zscore_rows(content)
+            for a in cfg.hybrid_alphas:
+                scores[f"emcdr_hybrid@{a:g}"] = a * ze + (1.0 - a) * zc
         for m in models:
             per_seed[m].append(_rank_metrics(scores[m], cfg.eval_ks))
 

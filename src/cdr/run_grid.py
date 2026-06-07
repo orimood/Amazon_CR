@@ -20,7 +20,7 @@ ABLATIONS = ["full", "cats_only", "text_only"]
 
 
 def run_grid(cfg: Config, ablations=None):
-    ablations = ablations or ABLATIONS
+    ablations = ablations or cfg.ablations or ABLATIONS
     device = select_device(cfg.device)
     set_seed(cfg.seed)
     reuse = cfg.subsample_users is None        # only reuse recommenders across pairs in full mode

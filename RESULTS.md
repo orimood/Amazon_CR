@@ -63,9 +63,62 @@ Best-variant tally: **text_only ×5, cats_only ×2, full ×1.**
 does not help and sometimes hurts. Practical read for §1.1: *keep the text embeddings; categories
 add little once text is present.*
 
-## 3. Caveats / next steps
+## 3. Per-pair winner analysis — which model won, and why
+
+R@10, `full` ablation, mean over 3 seeds. Sorted by **shared-user overlap** (descending), with the
+data characteristics that drive the outcome (overlap + jaccard from §3.4 of the dataset
+description; target catalog size + 5-core retention from §3.1).
+
+| pair | overlap | jaccard | tgt items | tgt 5-core ret. | EMCDR | tgt-MF | feat-transfer | MostPop | **winner** | EMCDR − best baseline |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|:--:|--:|
+| Books → Movies&TV | 109,206 | 0.093 | 181,532 | 37.8% | **0.308** | 0.293 | 0.231 | 0.191 | **EMCDR** | +0.015 |
+| Books → Toys&Games | 75,649 | 0.076 | 148,572 | 20.9% | **0.327** | 0.318 | 0.299 | 0.238 | **EMCDR** | +0.008 |
+| Movies&TV → Toys&Games | 46,024 | 0.050 | 148,572 | 20.9% | 0.286 | **0.303** | 0.273 | 0.226 | **target-MF** | −0.017 |
+| Movies&TV → CDs&Vinyl | 34,630 | 0.052 | 80,990 | 28.7% | **0.351** | 0.316 | 0.262 | 0.238 | **EMCDR** | +0.035 |
+| Books → CDs&Vinyl | 27,570 | 0.036 | 80,990 | 28.7% | **0.369** | 0.321 | 0.207 | 0.230 | **EMCDR** | +0.048 |
+| Movies&TV → Video Games | 16,504 | 0.025 | 22,746 | 15.0% | 0.170 | 0.177 | **0.246** | 0.131 | **feat-transfer** | −0.076 |
+| Toys&Games → Video Games | 14,517 | 0.033 | 22,746 | 15.0% | 0.164 | 0.122 | **0.289** | 0.095 | **feat-transfer** | −0.124 |
+| Books → Video Games | 11,801 | 0.016 | 22,746 | 15.0% | 0.163 | 0.164 | **0.211** | 0.092 | **feat-transfer** | −0.048 |
+
+**Tally: EMCDR ×4, target-MF ×1, feature-transfer ×3** (EMCDR still beats the deployed MostPop bar
+on all 8). The winner flips almost exactly at the overlap cliff: above ~27k shared users EMCDR
+wins; below ~17k (all three Video Games targets) it collapses and training-free content transfer
+takes over.
+
+**Three regimes.**
+- **EMCDR wins where its mapping has supervision (overlap ≥ 27k).** The only *learned*
+  cross-domain component is the mapping MLP `f` (`64→128→128→64`, ~33k params), trained on 80% of
+  overlap users → ~87k examples (Books→Movies) down to ~9.4k (Books→VG). Examples ≫ params →
+  generalizes; examples < params → overfits. This matches the cold-start CDR literature: training
+  a mapping on few overlapping users converges to sharp minima with poor generalization.
+- **Feature-transfer wins all three Video Games pairs because EMCDR *collapses*, not because
+  feat-transfer improves.** feat-transfer needs zero mapping training — it is `cosine(mean source
+  liked-item text, target item text)` in the frozen MiniLM space — so it is immune to thin overlap
+  and weak factors. Its R@10 (0.21–0.29) is steady across all targets; EMCDR craters to ~0.16 on
+  Video Games because two scarcities compound: thin overlap (undertrained mapping) **and** Video
+  Games is the smallest catalog (22.7k items) with the lowest 5-core retention (15.0%), so the
+  per-vertical recommender (only 604k positives) produces weak target item factors `V_tgt`.
+  (Tellingly, feat-transfer is the *worst* non-random baseline on the rich pairs — Books→CDs 0.207
+  — so it is robust-to-thinness, not "good.")
+- **The two close calls are target-side, not overlap-side.** *Movies→Toys (target-MF wins by
+  0.017):* Toys is the latest-dated vertical (train ends 2021-07 vs the Movies source's 2018-05) →
+  the largest source→target temporal gap; with Movies' weaker overlap (46k vs Books' 75k) the
+  mapping can't overcome the drift and falls below the average-user prior. *CDs is EMCDR's best
+  target (+0.035, +0.048):* small catalog (81k) **and** high retention (28.7%) → clean item factors
+  *and* real user histories for the mapping to predict; rich target structure, not overlap volume,
+  is what lets the mapping shine.
+
+**NDCG note.** feat-transfer's NDCG is much closer to EMCDR than its Recall is (Books→Movies:
+N@10 0.153 vs 0.158, but R@10 0.231 vs 0.308): content cosine is *sharp but narrow* — it ranks its
+hits near the top but hits less often — while EMCDR is broader but blurrier. This motivates a
+content-collaborative hybrid (see `IMPROVEMENTS.md` §C1).
+
+## 4. Caveats / next steps
 - **Single temporal split.** HW1 §1.3(2) requires the lift to survive ≥2 random splits + the time
   split. Not yet run (deferred: Stage-A re-run with `split="random"`, ≥2 seeds).
 - **Thin-overlap underperformance** (the Video Games pairs) is the R1/R3 diagnostic target: grow
   overlap (3-core contingency) and/or raise mapping regularization.
 - Per-experiment numbers (all metrics, per-seed, mean±std) are in `results/*.json`; weights are gitignored.
+- **Concrete fixes** for the thin-overlap collapse and the other failure modes (with literature
+  citations and repo-level changes) are scoped in `IMPROVEMENTS.md`, where §C1/§A1 carry measured
+  results.

@@ -13,6 +13,8 @@ class Config:
     # identity / runtime
     name: str = "run"
     tag: str = "full"                 # checkpoint namespace: keeps smoke != full caches
+    rec_tag: Optional[str] = None     # if set, recommenders load from THIS tag (reuse a
+                                      # cached per-vertical layer) while mappings/results use `tag`
     device: str = "auto"              # auto | cpu | mps | cuda
     seed: int = 42
 
@@ -44,8 +46,15 @@ class Config:
     eval_seeds: list = field(default_factory=lambda: [0, 1, 2])
     max_eval_users: Optional[int] = None
 
+    # content-collaborative hybrid scorer (IMPROVEMENTS §C1): per-user z-scored blend of the
+    # EMCDR score and the content-cosine (feature-transfer) score, swept over alpha.
+    # alpha=1.0 -> pure EMCDR, alpha=0.0 -> pure content (both reproduce their base model exactly).
+    run_hybrid: bool = False
+    hybrid_alphas: list = field(default_factory=lambda: [0.0, 0.25, 0.5, 0.75, 1.0])
+
     # what to run
     ablation: str = "full"                       # full | cats_only | text_only | id_only
+    ablations: list = field(default_factory=lambda: ["full", "cats_only", "text_only"])  # grid sweep
     run_baselines: bool = True
     pairs: list = field(default_factory=list)    # list of [src, tgt]
 
@@ -67,9 +76,11 @@ class Config:
     def to_dict(self) -> dict:
         return asdict(self)
 
-    # convenience: per-vertical recommender checkpoint dir
+    # convenience: per-vertical recommender checkpoint dir.
+    # Uses rec_tag when set so a results run can reuse a previously-cached recommender layer
+    # (e.g. the heavy `full` recommenders) without retraining or clobbering the original results.
     def rec_dir(self, vertical: str, ablation: str) -> Path:
-        return Path(self.models_root) / "recommenders" / f"{vertical}__{ablation}__{self.tag}"
+        return Path(self.models_root) / "recommenders" / f"{vertical}__{ablation}__{self.rec_tag or self.tag}"
 
     # convenience: per-pair mapping checkpoint dir
     def map_dir(self, src: str, tgt: str, ablation: str) -> Path:

@@ -1,0 +1,50 @@
+# Improvement run — Arm 1: baseline MLP mapping + content-collaborative hybrid scorer (C1).
+# Reuses the cached `full` per-vertical recommenders (rec_tag) — no recommender retraining.
+# Mappings are retrained (deterministic, seed 42) so EMCDR reproduces the headline run exactly;
+# the new columns are emcdr_hybrid@{alpha}. Results land under tag `improve_mlp` (no clobber).
+#   PYTHONPATH=src python -m cdr.run_grid --config configs/improve_mlp.yaml
+name: improve_mlp
+tag: improve_mlp
+rec_tag: full                   # load recommenders/{v}__full__full (cached); never retrain them
+device: cpu
+seed: 42
+d: 64
+use_pop: true
+
+rec_epochs: 15                  # unused (recommenders load from cache); kept for record
+rec_lr: 0.01
+rec_weight_decay: 1.0e-6
+rec_batch_size: 4096
+rec_steps_per_epoch: null
+subsample_users: null           # full mode -> recommender cache-load path is active
+
+map_hidden: [128, 128]          # baseline EMCDR mapping (reproduces the headline numbers)
+map_epochs: 200
+map_lr: 0.001
+map_weight_decay: 1.0e-5
+map_batch_size: 1024
+map_dropout: 0.2
+map_cos_weight: 0.5
+map_train_frac: 0.8
+
+eval_ks: [10, 20]
+eval_n_neg: 100
+eval_seeds: [0, 1, 2]
+max_eval_users: null
+
+run_baselines: true
+run_hybrid: true
+hybrid_alphas: [0.0, 0.25, 0.5, 0.75, 1.0]
+
+ablation: full
+ablations: [full]               # model-comparison ablation only
+
+pairs:
+  - [Books, Movies_and_TV]
+  - [Books, Toys_and_Games]
+  - [Movies_and_TV, Toys_and_Games]
+  - [Movies_and_TV, CDs_and_Vinyl]
+  - [Books, CDs_and_Vinyl]
+  - [Movies_and_TV, Video_Games]
+  - [Toys_and_Games, Video_Games]
+  - [Books, Video_Games]
