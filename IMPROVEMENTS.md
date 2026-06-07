@@ -20,8 +20,8 @@ all comparisons **within this run** are exact and fair.
 | **A1** | Regularized **linear** mapping | thin-overlap sharp-minima; rich-pair headroom | **measured** | low | +0.01–0.02 on rich pairs; fixes Movies→Toys |
 | — | **C1 + A1 combined** (gated linear) | both | **measured** | low | **mean R@10 0.266 → 0.307 (+15%)** |
 | **B1** | Content-grounded target item tower (freeze) | starved `V_tgt` on Video Games | **measured** | low | **VG EMCDR +38%; flips Books→VG to a win** |
-| **C2** | Residual content-conditioned bridge | beat content on the last 2 VG pairs | **measured** | low | does NOT beat content; ceiling diagnostic shows Toys→VG is unwinnable by any mapping |
-| **B2** | 3-core relaxation on Video Games | raise the target ceiling (Toys→VG) | **next** | med | the only lever that can beat content on Toys→VG |
+| **C2** | Residual content-conditioned bridge | beat content on the last 2 VG pairs | **measured** | low | does NOT beat content (wrong lever); content's signal dominates the thin VG pairs |
+| **B2** | 3-core Video Games (denser target + 2× overlap) | thin/sparse VG target | **measured** | med | **EMCDR beats content on Movies→VG & Books→VG; only Toys→VG still content** |
 | A2 | Sharpness-Aware Minimization (SAM) on mapping | sharp minima | specced | med | — |
 | B2 | 3-core relaxation on sparse verticals | low retention + sub-floor pairs | specced | med | data re-prep |
 | C2 | Content-conditioned mapping (CATN-style) | unified mapping ignores content | specced | high | — |
@@ -214,33 +214,76 @@ than their own true embedding. It settles whether "beat content" is even possibl
   mapping is the route.
 - **Books→VG: ceiling 0.224 > content 0.211**, and EMCDR(B1) 0.215 already wins.
 
-**Revised "beat everything" verdict (what the experiments actually say):**
-- **Books→VG — already won** (B1).
-- **Movies→VG — winnable;** lever = *more mapping supervision* (SSCDR semi-supervised pseudo-labels /
-  overlap augmentation), **not** a fancier bridge. C2 was the wrong tool; the headroom is real.
-- **Toys→VG — not winnable by any cold-start mapping;** lever = **raise the target ceiling** (B2:
-  3-core relaxation on Video Games to recover interactions and lift the 15% retention; or a richer
-  item model) — or accept the content fallback, which the C1 gate already deploys.
+**Revised "beat everything" verdict (then settled by B2 below):**
+- **Books→VG — won** (B1; B2 widens it).
+- **Movies→VG — has headroom → B2 wins it** (denser target + ~2× overlap; see below).
+- **Toys→VG — the lone holdout;** content's signal there is the strongest of any pair.
 
 **Takeaway.** On the last two pairs the binding constraint is the **target-domain collaborative
 signal**, not the bridge. The intuitive next step (a content-aware bridge, C2) is measurably the
-wrong lever; B2 (more/denser target data) is the right one for Toys→VG, and supervision augmentation
-for Movies→VG. The warm-oracle is the cheap test to run *before* investing in any new bridge.
+**wrong lever**; **B2 (more/denser target data) is the right one** — it is what finally beats content
+on Movies→VG. *Caveat on the warm-oracle:* B2 shows it is a **reference, not a strict ceiling** — at
+3-core EMCDR exceeds the warm-oracle on all three VG pairs, because a regularized, content-grounded
+mapped vector generalizes to the held-out TEST positive better than the user's own train-fit
+embedding. So the 5-core reading "Toys→VG unwinnable by any mapping" was too strong; denser data
+lifts the collaborative side substantially (Toys→VG EMCDR 0.217 → 0.279) — content simply wins there
+by signal strength, not an absolute ceiling.
+
+---
+
+## B2 — 3-core Video Games: denser target + 2× overlap (MEASURED)
+
+**What was built.** A 3-core Video Games vertical `Video_Games_3core` (a NEW vertical — the 5-core
+data and cached recommenders are untouched). 3-core recovers far more of the catalogue and audience,
+and roughly doubles every pair's overlap:
+
+| | 5-core | 3-core |
+|---|--:|--:|
+| users | 80,886 | 278,971 |
+| items | 22,746 | 48,139 |
+| retention vs 0-core | 15.0% | 33.3% |
+| overlap Movies→VG | 16,504 | 34,967 |
+| overlap Toys→VG | 14,517 | 32,930 |
+| overlap Books→VG | 11,801 | 26,206 |
+
+Code: `data/build_vg_3core.py` (Stage A + minimal bridges); configs `improve_b1_3core.yaml`
+(content-grounded recommender + EMCDR/content/hybrid) and `improve_c2_3core.yaml` (warm-oracle).
+
+**Result — at 3-core the cold-start EMCDR beats content on 2 of the 3 VG pairs.**
+
+| pair | overlap | EMCDR | content | EMCDR wins? |
+|---|--:|--:|--:|:--:|
+| Movies&TV → Video Games | 34,967 | **0.339** | 0.303 | ✅ (was ❌ at 5-core) |
+| Books → Video Games | 26,206 | **0.308** | 0.216 | ✅ (decisive) |
+| Toys&Games → Video Games | 32,930 | 0.279 | **0.364** | ❌ |
+
+Denser target factors (B1 on the 3-core catalogue) plus ~2× overlap (a better-supervised mapping)
+push the learned model above content on **Movies→VG** — exactly the pair the 5-core oracle flagged as
+having headroom — and widen the **Books→VG** win. **Toys→VG stays with content**, whose 0.364 is the
+strongest content score of any pair (Toys and Video Games share extreme catalogue affinity —
+franchises, hobby items). The hybrid blend again underperforms both (hyb@0.5 ≈ 0.21–0.24) — gating,
+not blending, remains the right combine.
+
+**Caveat — eval setups differ across k.** 3-core changes the cohort, the candidate pool (48k vs 22k
+items) and the held-out positives, so 3-core absolute numbers are **not** comparable to the 5-core
+ones; the valid, like-for-like claim is the **within-3-core EMCDR-vs-content** comparison (identical
+cohort/candidates per pair).
+
+**Final scorecard (best learned config per pair, A1 + B1 + B2).** The learned EMCDR is now the best
+model on **7 of 8 pairs**; only **Toys→VG** is still best served by training-free content-transfer,
+and the C1 gate deploys content there. Every pair beats the deployed MostPop fallback.
 
 ---
 
 ## Specced (not yet run) — needs retraining or data re-prep
 
-- **B2 — 3-core relaxation on Video Games (now the prioritized next step for Toys→VG).** The warm-oracle
-  shows Toys→VG is unwinnable at the current VG representation (ceiling 0.189 < content 0.289); the only
-  way to beat content is to lift that ceiling. 3-core recovers VG interactions (retention 15% → higher),
-  densifies `V_tgt` and the warm user space, and also unlocks the 2 sub-floor pairs (Toys↔CDs 7.75k,
-  CDs↔VG 4.4k). Stage-A `k` change; re-baselines the cohort. *Validate:* re-measure the warm-oracle —
-  success = oracle rises above content.
-- **SSCDR semi-supervised augmentation (prioritized next step for Movies→VG).** Movies→VG has headroom
-  (ceiling 0.248 ≈ content, EMCDR 0.219); close the cold→warm gap with more bridge supervision —
-  pseudo-label non-overlap users via neighborhood inference, or mixup/multi-view augmentation of the
-  overlap pairs. Mapping-only, reuses cached recommenders.
+- **Toys→VG (only remaining loss).** Content's affinity here (0.364) is exceptionally strong; the
+  collaborative side improved with 3-core (0.217 → 0.279) but not enough. Options if pursued: even more
+  overlap/target density (2-core, or a richer item encoder), or accept the content fallback the C1 gate
+  already deploys. SSCDR-style semi-supervised augmentation (pseudo-label non-overlap users) is the
+  mapping-side lever, but the gap to 0.364 is large.
+- **Extend B2 / 3-core to unlock sub-floor pairs.** The same 3-core build makes Toys↔CDs (7.75k) and
+  CDs↔Video Games (4.4k) viable; rebuild those bridges to widen the deliverable from 8 to 10 pairs.
 - **A2 — Sharpness-Aware Minimization on the mapping (P2).** SCDR's exact remedy for the sharp-minima
   cause; wrap the Adam step in `src/cdr/train_mapping.py` with a perturbation step. Complementary to
   A1 (A1 shrinks the model; A2 flattens the loss).
@@ -280,5 +323,9 @@ PYTHONPATH=src python -m cdr.run_grid --config configs/improve_lin.yaml   # Arm 
 PYTHONPATH=src python -m cdr.run_grid --config configs/improve_b1.yaml    # B1a: content-grounded VG target (freeze)
 PYTHONPATH=src python -m cdr.run_grid --config configs/improve_b1t.yaml   # B1b: content warm-start (trainable)
 PYTHONPATH=src python -m cdr.run_c2   --config configs/improve_c2.yaml    # C2 residual bridge + warm-oracle ceiling
-# per-experiment JSONs: results/*__full__{improve_mlp,improve_lin,b1,b1t,c2}.json ; grids: results/GRID__*.json
+# B2 — 3-core Video Games (denser target + 2x overlap):
+PYTHONPATH=src python data/build_vg_3core.py                              # build Video_Games_3core + bridges (~7 min, MPS)
+PYTHONPATH=src python -m cdr.run_grid --config configs/improve_b1_3core.yaml  # B2: EMCDR + content + hybrid on 3-core
+PYTHONPATH=src python -m cdr.run_c2   --config configs/improve_c2_3core.yaml  # B2: warm-oracle on 3-core
+# per-experiment JSONs: results/*__full__{improve_mlp,improve_lin,b1,b1t,c2,b1_3core,c2_3core}.json
 ```

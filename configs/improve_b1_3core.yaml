@@ -1,0 +1,47 @@
+# B2 — content-grounded recommender on the 3-core Video Games target (Video_Games_3core).
+# Trains the VG_3core recommender (freeze_id, content-grounded) and evaluates EMCDR + content
+# + hybrid on the 3 source -> VG_3core pairs. Sources load from the cached `full` tag.
+#   PYTHONPATH=src python -m cdr.run_grid --config configs/improve_b1_3core.yaml
+name: b1_3core
+tag: b1_3core
+rec_tag: full
+rec_tag_overrides: {Video_Games_3core: b1_3core}
+device: cpu
+seed: 42
+d: 64
+use_pop: true
+text_init: false
+freeze_id: true                 # content-grounded item tower (B1) on the denser target
+
+rec_epochs: 15
+rec_lr: 0.01
+rec_weight_decay: 1.0e-6
+rec_batch_size: 4096
+rec_steps_per_epoch: null
+subsample_users: null
+
+map_hidden: []                  # linear mapping (A1)
+map_epochs: 200
+map_lr: 0.001
+map_weight_decay: 1.0e-4
+map_batch_size: 1024
+map_dropout: 0.2
+map_cos_weight: 0.5
+map_train_frac: 0.8
+
+eval_ks: [10, 20]
+eval_n_neg: 100
+eval_seeds: [0, 1, 2]
+max_eval_users: null
+
+run_baselines: true
+run_hybrid: true
+hybrid_alphas: [0.0, 0.5, 1.0]
+
+ablation: full
+ablations: [full]
+
+pairs:
+  - [Movies_and_TV, Video_Games_3core]
+  - [Toys_and_Games, Video_Games_3core]
+  - [Books, Video_Games_3core]
