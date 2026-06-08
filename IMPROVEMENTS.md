@@ -29,27 +29,38 @@ and to **target-MF** on Movies→Toys. Five fixes were implemented and measured 
 
 **Combined deployable policy:** regularized **linear mapping** everywhere (A1) + **content-grounded
 target tower** for sparse targets (B1) + **3-core** for the sparse VG target (B2) + a serve-time
-**overlap gate to content** where it still wins (C1). On the 5-core 8-pair set, mean R@10 rose from
-**0.266 → 0.307** (A1 + C1); with B1/B2 the learned model went from losing 3 pairs to losing 1.
+**gate to the best per-pair model** (C1) — EMCDR on the rich pairs, and the strongest target-side
+baseline (target-MF / content) on the sparse VG pairs where EMCDR is #2. Within the 5-core rich+VG
+set the EMCDR-or-content gate lifted mean R@10 **0.266 → 0.307**; against *content* specifically,
+EMCDR went from losing 3 pairs to losing 1 — but against the **full** baseline set it remains #2 on
+all 3 VG pairs (see scorecard).
 
-**Final scorecard — best model per pair** (✅ = our learned EMCDR is best; ❌ = content-transfer wins):
+**Final scorecard — full baseline set, R@10** (✅ = EMCDR is the *outright* best-of-all):
 
-| pair | best model | beats content? | beats MostPop? |
-|---|---|:--:|:--:|
-| Books → Movies&TV | EMCDR (linear) | ✅ | ✅ |
-| Books → Toys&Games | EMCDR (linear) | ✅ | ✅ |
-| Movies&TV → Toys&Games | EMCDR (linear) | ✅ | ✅ |
-| Movies&TV → CDs&Vinyl | EMCDR (linear) | ✅ | ✅ |
-| Books → CDs&Vinyl | EMCDR (linear) | ✅ | ✅ |
-| Movies&TV → Video Games | EMCDR (B1 + B2 3-core) | ✅ | ✅ |
-| Books → Video Games | EMCDR (B1 + B2 3-core) | ✅ | ✅ |
-| Toys&Games → Video Games | content-transfer (gated) | ❌ | ✅ |
+| pair | EMCDR | content | target-MF | MostPop | outright winner | EMCDR best? |
+|---|--:|--:|--:|--:|---|:--:|
+| Books → Movies&TV | 0.323 | 0.231 | 0.293 | 0.191 | EMCDR | ✅ |
+| Books → Toys&Games | 0.325 | 0.299 | 0.318 | 0.238 | EMCDR | ✅ |
+| Movies&TV → Toys&Games | 0.303 | 0.273 | 0.303 | 0.226 | EMCDR (ties target-MF) | ✅ |
+| Movies&TV → CDs&Vinyl | 0.365 | 0.262 | 0.316 | 0.238 | EMCDR | ✅ |
+| Books → CDs&Vinyl | 0.395 | 0.207 | 0.321 | 0.230 | EMCDR | ✅ |
+| Movies&TV → Video Games ³ᶜ | 0.339 | 0.303 | **0.362** | 0.220 | **target-MF** | ❌ (#2) |
+| Books → Video Games ³ᶜ | 0.308 | 0.216 | **0.345** | 0.201 | **target-MF** | ❌ (#2) |
+| Toys&Games → Video Games ³ᶜ | 0.279 | **0.364** | 0.260 | 0.160 | **content** | ❌ (#2) |
 
-**Net: the learned EMCDR is the best model on 7 of 8 pairs (up from 5/8), and every pair beats the
-deployed MostPop fallback.** The lone holdout — Toys→VG — has the strongest content affinity of any
-pair, so the C1 gate ships content there. *Caveat:* the two Video-Games rows use the 3-core setup, so
-their absolute R@10 is **not** comparable to the 5-core rows; the ✅/❌ is the per-pair, like-for-like
-signal.
+**Net (honest, against the full baseline set):**
+- **EMCDR is the outright best model on 5/8 pairs** — the data-rich pairs, where it cleanly beats
+  *every* baseline (content, target-MF, MostPop). This is where cross-domain transfer demonstrably pays off.
+- On the **3 Video-Games pairs EMCDR places #2.** It beats content + MostPop, but a **non-personalized
+  target-popularity baseline (target-MF)** edges it on Movies→VG and Books→VG, and content wins Toys→VG.
+- **EMCDR beats the deployed MostPop fallback on 8/8.**
+- **Outright tally: EMCDR 5 · target-MF 2 · content 1.**
+
+This is the same gap the original `RESULTS.md` "beats all" column flagged (❌ on the VG pairs): **on the
+sparse Video-Games target, cross-domain personalization does not beat a target-side popularity prior.**
+B1/B2 lifted EMCDR above *content* there, but not above target-MF. (Caveats: 3-core absolute numbers
+aren't comparable to the 5-core rows; and sampled-negative evaluation structurally flatters popularity
+baselines, since held-out positives skew popular.)
 
 **Also produced:** a reusable diagnostic — the **warm-oracle** (rank cold users by their real target
 embedding) — which cheaply indicates, *before* building any bridge, whether a pair's collaborative
@@ -64,7 +75,7 @@ signal can rival content. (B2 showed it is a strong reference, but not a strict 
 | — | **C1 + A1 combined** (gated linear) | both | **measured** | low | **mean R@10 0.266 → 0.307 (+15%)** |
 | **B1** | Content-grounded target item tower (freeze) | starved `V_tgt` on Video Games | **measured** | low | **VG EMCDR +38%; flips Books→VG to a win** |
 | **C2** | Residual content-conditioned bridge | beat content on the last 2 VG pairs | **measured** | low | does NOT beat content (wrong lever); content's signal dominates the thin VG pairs |
-| **B2** | 3-core Video Games (denser target + 2× overlap) | thin/sparse VG target | **measured** | med | **EMCDR beats content on Movies→VG & Books→VG; only Toys→VG still content** |
+| **B2** | 3-core Video Games (denser target + 2× overlap) | thin/sparse VG target | **measured** | med | EMCDR beats content on 2/3 VG pairs, but **target-MF still edges it** → EMCDR #2 on all 3 VG pairs |
 | A2 | Sharpness-Aware Minimization (SAM) on mapping | sharp minima | specced | med | — |
 | B2 | 3-core relaxation on sparse verticals | low retention + sub-floor pairs | specced | med | data re-prep |
 | C2 | Content-conditioned mapping (CATN-style) | unified mapping ignores content | specced | high | — |
@@ -312,9 +323,12 @@ items) and the held-out positives, so 3-core absolute numbers are **not** compar
 ones; the valid, like-for-like claim is the **within-3-core EMCDR-vs-content** comparison (identical
 cohort/candidates per pair).
 
-**Final scorecard (best learned config per pair, A1 + B1 + B2).** The learned EMCDR is now the best
-model on **7 of 8 pairs**; only **Toys→VG** is still best served by training-free content-transfer,
-and the C1 gate deploys content there. Every pair beats the deployed MostPop fallback.
+**Where this leaves us (full baseline set — see the Summary scorecard).** EMCDR beats *content* on
+Movies→VG and Books→VG, **but not target-MF**: the non-personalized target-popularity baseline edges
+it (0.362 and 0.345 vs EMCDR's 0.339 and 0.308), so EMCDR is **#2** on all three VG pairs. EMCDR is
+the **outright best on the 5 data-rich pairs**, and beats MostPop on 8/8. So on the sparse VG target,
+cross-domain personalization still loses to a target popularity prior — B2 narrowed the gap to content
+but did not make EMCDR the winner there.
 
 ---
 
