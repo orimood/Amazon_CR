@@ -12,19 +12,37 @@ The cross-vertical bridge is item-side: hierarchical categories + a text embeddi
 
 ```
 Amazon_CR/
-├── CRISP-DM User Guide.pdf       # methodology reference (1999 paper)
-├── HW2 - Template.docx           # current homework — filling in §2.x and §3.x
-├── HW2 - Template.bak.docx       # backup before automated edits
+├── requirements.txt              # data + EDA + embeddings env (root, by convention)
+├── requirements-modeling.txt     # modeling env, layered on top
+├── .gitignore
+├── docs/                         # all project documentation
+│   ├── progress.md               # this file
+│   ├── section3_preprocessing_plan.md
+│   ├── MODEL_CARD.md             # §4 architecture + how-to-run
+│   ├── RESULTS.md                # full-run results (8 pairs × ablations)
+│   ├── IMPROVEMENTS.md           # per-pair fixes (companion to RESULTS.md)
+│   └── reference/                # course / methodology materials
+│       ├── HW2 - Template.docx   # current homework — §2.x and §3.x
+│       └── CRISP-DM User Guide.pdf
 ├── submitted/                    # previous-phase deliverables
 │   ├── HW1_CDR (2).docx
 │   └── cross_domain_recsys_project (1).docx
+├── src/cdr/                      # §4 modeling package (run via PYTHONPATH=src)
+├── configs/                      # *.yaml experiment configs
 ├── data/
 │   ├── download.py               # reproducible HuggingFace pull
-│   └── raw/                      # gitignored — not committed
-│       ├── reviews/   *.csv      # 0-core ratings per vertical
-│       └── meta/      *.jsonl    # raw item metadata per vertical
-├── progress.md                   # this file
-└── .gitignore
+│   ├── embed_all.py              # full MiniLM embedding pass
+│   ├── regen_description.py      # rebuild DATASET_DESCRIPTION
+│   ├── build_vg_3core.py         # 3-core Video_Games target build
+│   ├── raw/                      # gitignored — not committed
+│   │   ├── reviews/   *.csv      # 0-core ratings per vertical
+│   │   └── meta/      *.jsonl    # raw item metadata per vertical
+│   └── processed/                # Stage A/B/C outputs (gitignored)
+├── models/                       # trained weights + mappings (gitignored)
+├── results/                      # per-run metrics *.json (tracked)
+├── figures/                      # EDA figures + make_figures.py
+├── notebooks/                    # eda / data_prep / presentation
+└── backups/                      # one-off pre-edit backups (gitignored)
 ```
 
 ## What's been done
@@ -84,7 +102,7 @@ For the EMCDR pipeline:
 
 ## HW2 status
 
-HW2 is the **Data Understanding + Data Preparation** phase write-up. Template at `HW2 - Template.docx`, methodology reference at `CRISP-DM User Guide.pdf`.
+HW2 is the **Data Understanding + Data Preparation** phase write-up. Template at `docs/reference/HW2 - Template.docx`, methodology reference at `docs/reference/CRISP-DM User Guide.pdf`.
 
 - §2.1 Collect Initial Data — **drafted, under revision.** Currently covers source, acquisition, data requirements planning (Interactions / Item metadata / Shared users), selection criteria (vertical pick + file-variant pick + field tier), insertion/extraction notes (formats, encoding plan, missing values, `bought_together`-empty, join key, `main_category` caveat), merge-quality cautions, and an inventory of the 10-file snapshot.
 - §2.2 Describe Data — **TODO.** Gross properties: row counts on the ratings tables, attribute types and value ranges, free-text presence rates, basic distributions (ratings histogram, items per user, users per item).
@@ -144,11 +162,11 @@ The proper long-term fix is to move the project off the Desktop path. Until then
 
 ## HW2 status — §3 sections to fill
 
-`HW2 - Template.docx` §3.1–§3.5 can be written directly from `data/processed/DATASET_DESCRIPTION.md`: each table there maps to one section of the template.
+`docs/reference/HW2 - Template.docx` §3.1–§3.5 can be written directly from `data/processed/DATASET_DESCRIPTION.md`: each table there maps to one section of the template.
 
 ## §4 Modeling — pipeline built + smoke-validated (2026-06-01)
 
-Branch `emcdr-modeling`. Code in `src/cdr/` (run via `PYTHONPATH=src python -m cdr.run_pair --config configs/smoke.yaml`). Full architecture + how-to-run in `MODEL_CARD.md`; deciding rationale in the approved plan.
+Branch `emcdr-modeling`. Code in `src/cdr/` (run via `PYTHONPATH=src python -m cdr.run_pair --config configs/smoke.yaml`). Full architecture + how-to-run in `docs/MODEL_CARD.md`; deciding rationale in the approved plan.
 
 **Deliverable scope is all 8 pairs**, not one — the HW1 "proof-of-value pair" wording is superseded by the §3 rewrite. The pipeline mirrors the Stage A/B reuse layout: 5 per-vertical hybrid recommenders trained once each + 8 per-pair mapping MLPs reusing them, aligned across verticals by `user_id` through the id-maps.
 
