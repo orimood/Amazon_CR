@@ -38,15 +38,26 @@ META = "data/raw/meta"
 SRC, TGT, ABL, TAG = "Books", "Movies_and_TV", "full", "full"
 DEV = torch.device("cpu")
 
-# 6 iconic epic-fantasy books, verified present in the Books catalog.
-DEFAULT_BOOKS = [
-    ("0261102664", "The Hobbit"),
-    ("0618346252", "The Fellowship of the Ring"),
-    ("0553103547", "A Game of Thrones"),
-    ("075640407X", "The Name of the Wind"),
-    ("0765365278", "The Way of Kings"),
-    ("0765360969", "Mistborn: The Final Empire"),
-]
+# Named taste profiles — (parent_asin, title), all verified present in the Books catalog.
+PROFILES = {
+    "fantasy": [
+        ("0261102664", "The Hobbit"),
+        ("0618346252", "The Fellowship of the Ring"),
+        ("0553103547", "A Game of Thrones"),
+        ("075640407X", "The Name of the Wind"),
+        ("0765365278", "The Way of Kings"),
+        ("0765360969", "Mistborn: The Final Empire"),
+    ],
+    "scifi": [
+        ("0340839937", "Dune"),
+        ("1904233023", "Ender's Game"),
+        ("B082BHWQCJ", "The Martian"),
+        ("0441000681", "Neuromancer"),
+        ("0307913147", "Ready Player One"),
+        ("0553380958", "Snow Crash"),
+    ],
+}
+DEFAULT_BOOKS = PROFILES["fantasy"]
 
 
 def load_recommender(vertical: str):
@@ -137,12 +148,14 @@ def take_titled(pool, titles: dict, k: int):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--profile", choices=sorted(PROFILES), default="fantasy",
+                    help="named taste profile (default: fantasy)")
     ap.add_argument("--books", nargs="*", default=None,
-                    help="parent_asin list of source books (defaults to 6 fantasy classics)")
+                    help="ad-hoc parent_asin list of source books (overrides --profile)")
     ap.add_argument("--k", type=int, default=12)
     a = ap.parse_args()
 
-    books = ([(b, b) for b in a.books] if a.books else DEFAULT_BOOKS)
+    books = ([(b, b) for b in a.books] if a.books else PROFILES[a.profile])
 
     print("Loading trained Books + Movies recommenders and the EMCDR mapping ...")
     src_model, src_store, src_items, src_meta = load_recommender(SRC)
