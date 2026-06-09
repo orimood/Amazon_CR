@@ -228,12 +228,13 @@ def main():
 
     # aggregate context so the single user is not mistaken for the whole result
     try:
-        agg = json.load(open(Path(cfg.results_root) / f"{SRC}__{TGT}__{ABL}__{cfg.tag}.json"))
-        r10 = agg["metrics"]["emcdr"]["Recall@10"]["mean"]
-        ft10 = agg["metrics"]["baseline_feature_transfer"]["Recall@10"]["mean"]
-        print(f"\n  Context: over all {agg['n_eval_users']:,} cold-start users on this pair, "
-              f"EMCDR Recall@10={r10:.3f} vs content {ft10:.3f}.")
-    except (FileNotFoundError, KeyError):
+        summ = json.load(open(Path(cfg.results_root) / "SUMMARY.json"))
+        pj = next(p for p in summ["pairs"] if p["src"] == SRC and p["tgt"] == TGT)
+        r10 = pj["metrics"]["emcdr"]["Recall@10"]["mean"]
+        ft10 = pj["metrics"]["baseline_feature_transfer"]["Recall@10"]["mean"]
+        print(f"\n  Context: over all {pj['n_eval_users']:,} cold-start users on this pair, "
+              f"EMCDR Recall@10={r10:.3f} vs content {ft10:.3f} (deployed config).")
+    except (FileNotFoundError, KeyError, StopIteration):
         pass
     print("\n  Note: this is one selected, illustrative real user; the line above is the\n"
           "  aggregate. Use --src-idx to inspect others (596747, 653973 are also strong).\n")
