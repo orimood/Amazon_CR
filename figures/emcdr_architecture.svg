@@ -1,0 +1,101 @@
+<svg viewBox="0 0 1120 548" xmlns="http://www.w3.org/2000/svg" font-family="'Segoe UI','Helvetica Neue',Arial,sans-serif">
+  <defs>
+    <marker id="aP" markerWidth="11" markerHeight="11" refX="8" refY="3.2" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.2 L0,6.4 Z" fill="#6C4DF6"/></marker>
+    <marker id="aO" markerWidth="11" markerHeight="11" refX="8" refY="3.2" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.2 L0,6.4 Z" fill="#F7A81B"/></marker>
+    <marker id="aT" markerWidth="11" markerHeight="11" refX="8" refY="3.2" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.2 L0,6.4 Z" fill="#16C2C2"/></marker>
+    <marker id="aG" markerWidth="10" markerHeight="10" refX="7.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L8,3 L0,6 Z" fill="#9A97AD"/></marker>
+    <filter id="sf" x="-6%" y="-12%" width="112%" height="128%"><feDropShadow dx="0" dy="2" stdDeviation="3.5" flood-color="#2B2D42" flood-opacity="0.10"/></filter>
+  </defs>
+
+  <rect x="0" y="0" width="1120" height="548" fill="#F7F7FC"/>
+
+  <text x="560" y="36" text-anchor="middle" font-size="24" font-weight="700" fill="#2B2D42">Final EMCDR Cross-Domain Recommender</text>
+  <text x="560" y="60" text-anchor="middle" font-size="13" fill="#6E6B85">One pipeline — a bold cold-start serving path, fed by BPR-trained per-vertical towers and the overlap-supervised mapping.</text>
+
+  <!-- ===== TRAINING FEEDERS (dashed, muted) ===== -->
+  <!-- source training -->
+  <rect x="210" y="92" width="200" height="46" rx="9" fill="#FFFFFF" stroke="#CBC6DD"/>
+  <text x="310" y="120" text-anchor="middle" font-size="12" font-weight="600" fill="#2B2D42">Source interactions</text>
+  <rect x="210" y="162" width="200" height="56" rx="9" fill="#FFFFFF" stroke="#CBC6DD"/>
+  <text x="310" y="185" text-anchor="middle" font-size="12" font-weight="700" fill="#2B2D42">Source recommender</text>
+  <text x="310" y="203" text-anchor="middle" font-size="10.5" fill="#6E6B85">two-tower · trained with BPR</text>
+
+  <!-- target training -->
+  <rect x="680" y="92" width="200" height="46" rx="9" fill="#FFFFFF" stroke="#CBC6DD"/>
+  <text x="780" y="120" text-anchor="middle" font-size="12" font-weight="600" fill="#2B2D42">Target interactions</text>
+  <rect x="680" y="162" width="200" height="56" rx="9" fill="#FFFFFF" stroke="#CBC6DD"/>
+  <text x="780" y="185" text-anchor="middle" font-size="12" font-weight="700" fill="#2B2D42">Target recommender</text>
+  <text x="780" y="203" text-anchor="middle" font-size="10.5" fill="#6E6B85">hybrid two-tower · BPR</text>
+
+  <!-- target embeddings (shared into serving) -->
+  <rect x="520" y="246" width="150" height="50" rx="9" fill="#ECE8FE" stroke="#B6A9F7"/>
+  <text x="595" y="268" text-anchor="middle" font-size="12" font-weight="700" fill="#2B2D42">U_tgt</text>
+  <text x="595" y="285" text-anchor="middle" font-size="10" fill="#6E6B85">overlap users</text>
+
+  <rect x="680" y="246" width="200" height="58" rx="9" fill="#E2F8F7" stroke="#16C2C2"/>
+  <text x="780" y="268" text-anchor="middle" font-size="12" font-weight="700" fill="#0E8C8C">V_tgt — item embeddings</text>
+  <text x="780" y="287" text-anchor="middle" font-size="10" fill="#2B2D42">id &#8853; W_text·text &#8853; &#931; cat &#8853; pop</text>
+
+  <!-- dashed training edges -->
+  <path d="M310,138 L310,162" fill="none" stroke="#9A97AD" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#aG)"/>
+  <path d="M305,218 L300,342" fill="none" stroke="#9A97AD" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#aG)"/>
+  <text x="312" y="295" font-size="10" fill="#9A97AD">U_src</text>
+  <path d="M780,138 L780,162" fill="none" stroke="#9A97AD" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#aG)"/>
+  <path d="M780,218 L780,244" fill="none" stroke="#9A97AD" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#aG)"/>
+  <path d="M690,205 C640,225 625,235 645,247" fill="none" stroke="#9A97AD" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#aG)"/>
+  <!-- mapping supervision: û pulled toward U_tgt -->
+  <path d="M595,296 L582,342" fill="none" stroke="#9A97AD" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#aG)"/>
+  <text x="600" y="325" font-size="10" fill="#9A97AD">supervises f</text>
+
+  <!-- ===== SERVING SPINE (solid, bold) ===== -->
+  <!-- cold user -->
+  <rect x="48" y="346" width="152" height="64" rx="11" fill="#FEF1DC" stroke="#F7A81B" filter="url(#sf)"/>
+  <text x="124" y="372" text-anchor="middle" font-size="13" font-weight="700" fill="#2B2D42">Cold user</text>
+  <text x="124" y="391" text-anchor="middle" font-size="10.5" fill="#6E6B85">source history only</text>
+
+  <!-- U_src -->
+  <rect x="238" y="346" width="120" height="64" rx="11" fill="#ECE8FE" stroke="#6C4DF6" filter="url(#sf)"/>
+  <text x="298" y="372" text-anchor="middle" font-size="13" font-weight="700" fill="#2B2D42">U_src</text>
+  <text x="298" y="391" text-anchor="middle" font-size="10" fill="#6E6B85">source user vec</text>
+
+  <!-- f -->
+  <rect x="396" y="346" width="92" height="64" rx="11" fill="#6C4DF6" filter="url(#sf)"/>
+  <text x="442" y="374" text-anchor="middle" font-size="18" font-weight="700" fill="#FFFFFF">f</text>
+  <text x="442" y="393" text-anchor="middle" font-size="9.5" fill="#EDE9FF">linear 64&#8594;64</text>
+
+  <!-- û -->
+  <rect x="524" y="346" width="104" height="64" rx="11" fill="#ECE8FE" stroke="#6C4DF6" filter="url(#sf)"/>
+  <text x="576" y="372" text-anchor="middle" font-size="13" font-weight="700" fill="#2B2D42">&#251;</text>
+  <text x="576" y="391" text-anchor="middle" font-size="10" fill="#6E6B85">= f(U_src)</text>
+
+  <!-- score -->
+  <rect x="664" y="346" width="236" height="64" rx="11" fill="#E2F8F7" stroke="#16C2C2" filter="url(#sf)"/>
+  <text x="782" y="372" text-anchor="middle" font-size="13.5" font-weight="700" fill="#2B2D42">score = &#251; · V_tgt</text>
+  <text x="782" y="391" text-anchor="middle" font-size="10.5" fill="#6E6B85">rank the target catalog</text>
+
+  <!-- top-n -->
+  <rect x="938" y="346" width="150" height="64" rx="11" fill="#F7A81B" filter="url(#sf)"/>
+  <text x="1013" y="372" text-anchor="middle" font-size="13" font-weight="700" fill="#FFFFFF">Top-N items</text>
+  <text x="1013" y="391" text-anchor="middle" font-size="10.5" fill="#FFFFFF">in target vertical</text>
+
+  <!-- serving edges -->
+  <path d="M200,378 L234,378" fill="none" stroke="#6C4DF6" stroke-width="3" marker-end="url(#aP)"/>
+  <path d="M358,378 L392,378" fill="none" stroke="#6C4DF6" stroke-width="3" marker-end="url(#aP)"/>
+  <path d="M488,378 L520,378" fill="none" stroke="#6C4DF6" stroke-width="3" marker-end="url(#aP)"/>
+  <path d="M628,378 L660,378" fill="none" stroke="#16C2C2" stroke-width="3" marker-end="url(#aT)"/>
+  <path d="M900,378 L934,378" fill="none" stroke="#F7A81B" stroke-width="3" marker-end="url(#aO)"/>
+  <!-- V_tgt feeds the score (item side of the dot product) -->
+  <path d="M778,304 L781,342" fill="none" stroke="#16C2C2" stroke-width="3" marker-end="url(#aT)"/>
+
+  <!-- ===== LEGEND ===== -->
+  <line x1="60" y1="456" x2="96" y2="456" stroke="#6C4DF6" stroke-width="3"/>
+  <text x="104" y="460" font-size="11" fill="#2B2D42">serving: map the cold user</text>
+  <line x1="300" y1="456" x2="336" y2="456" stroke="#F7A81B" stroke-width="3"/>
+  <text x="344" y="460" font-size="11" fill="#2B2D42">score &#8594; recommend</text>
+  <line x1="540" y1="456" x2="576" y2="456" stroke="#9A97AD" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="584" y="460" font-size="11" fill="#2B2D42">training (BPR + mapping supervision)</text>
+
+  <!-- ===== FOOTNOTES ===== -->
+  <text x="560" y="498" text-anchor="middle" font-size="10.5" fill="#9A97AD">Embedding dim d = 64 · mapping f is a regularized linear map (A1) · per-vertical towers are trained once and reused across all 8 directed pairs.</text>
+  <text x="560" y="516" text-anchor="middle" font-size="10.5" fill="#9A97AD">Sparse Video-Games target: content-grounded item tower (id factor frozen) on a 3-core catalog · below the overlap cliff, serving falls back to MostPop.</text>
+</svg>
