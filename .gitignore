@@ -20,3 +20,6 @@ HW2 - Template.*.bak.docx
 ~$*.docx
 Archive.zip
 notebooks/_cache/
+
+# redundant zip of already-tracked src/
+src.zip
